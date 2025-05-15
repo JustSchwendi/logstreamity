@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Bernina Sans';
+  src: url('https://dt-cdn.net/fonts/BerninaSans/BerninaSans-Web-Regular-20190314.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Bernina Sans';
+  src: url('https://dt-cdn.net/fonts/BerninaSans/BerninaSans-Web-Bold-20190314.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+}
+
+@layer base {
+  body {
+    font-family: 'Bernina Sans', sans-serif;
+  }
+
+  .login-background {
+    background-image: url('https://marvel-b1-cdn.bc0a.com/f00000000236551/dt-cdn.net/images/wave-2023-01-full-multicolor-1-1920-d037dc9eff.webp');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  input[type="number"],
+  input[type="text"],
+  input[type="password"],
+  input[type="url"] {
+    @apply border-gray-300 focus:border-dynatrace-primary focus:ring-dynatrace-primary;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-dynatrace-primary hover:bg-dynatrace-hover-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-dynatrace-primary transition-colors;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-dynatrace-primary bg-dynatrace-primary/10 hover:bg-dynatrace-primary/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-dynatrace-primary transition-colors;
+  }
+
+  .nav-link {
+    @apply inline-flex items-center px-3 py-2 text-sm font-medium transition-colors;
+  }
+
+  .nav-link-active {
+    @apply text-dynatrace-primary border-b-2 border-dynatrace-primary;
+  }
+
+  .nav-link-inactive {
+    @apply text-gray-500 hover:text-dynatrace-primary;
+  }
+}
