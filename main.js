@@ -1,4 +1,4 @@
-// main.js — Enhanced ingest logic and UI wiring
+// main.js — Updated for Dynatrace Logs v2 JSON ingest
 
 let logLines = [];
 let ingestInterval = null;
@@ -50,11 +50,11 @@ async function testConnection(endpoint, token) {
     connectionStatus.className = response.ok 
       ? 'connection-success rounded-md p-4 mb-4' 
       : 'connection-error rounded-md p-4 mb-4';
-    
+
     connectionStatus.textContent = response.ok
       ? '✓ Connection successful! Ready to ingest logs.'
       : `⚠ Connection failed: ${response.status} ${response.statusText}`;
-    
+
     connectionStatus.style.display = 'block';
     return response.ok;
   } catch (error) {
@@ -75,7 +75,6 @@ startBtn.addEventListener('click', async () => {
     return;
   }
 
-  // Test connection before starting
   const isConnected = await testConnection(endpoint, token);
   if (!isConnected) {
     return;
@@ -97,7 +96,7 @@ startBtn.addEventListener('click', async () => {
 
     const line = logLines[currentLineIndex++];
     const payload = buildPayload(line);
-    
+
     fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -128,26 +127,10 @@ stopBtn.addEventListener('click', () => {
 
 function buildPayload(line) {
   return {
-    resourceLogs: [
-      {
-        resource: {
-          attributes: [
-            { key: 'service.name', value: { stringValue: 'manual-log-ingest-ui' } }
-          ]
-        },
-        scopeLogs: [
-          {
-            logRecords: [
-              {
-                timeUnixNano: Date.now() * 1_000_000,
-                severityText: 'INFO',
-                body: { stringValue: line }
-              }
-            ]
-          }
-        ]
-      }
-    ]
+    content: line,
+    "log.source": "logstreamity",
+    timestamp: Date.now(),
+    severity: "INFO"
   };
 }
 
