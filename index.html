@@ -5,46 +5,83 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dynatrace Log Ingest Playground</title>
   <link rel="stylesheet" href="style.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'dynatrace-primary': '#1496FF',
+            'dynatrace-hover-primary': '#0073E6',
+            'dynatrace-secondary': '#454D57'
+          }
+        }
+      }
+    }
+  </script>
 </head>
-<body>
-  <header>
-    <h1>Dynatrace Log Ingest Playground</h1>
-    <p class="subtitle">Test ingesting any logs into your Dynatrace tenant using OpenTelemetry</p>
+<body class="bg-gray-50">
+  <header class="bg-white shadow-sm">
+    <div class="max-w-4xl mx-auto px-4 py-6">
+      <h1 class="text-3xl font-bold text-dynatrace-primary">Log Ingest Playground</h1>
+      <p class="text-gray-600 mt-2">Test ingesting logs into your Dynatrace tenant using OpenTelemetry</p>
+    </div>
   </header>
 
-  <main>
-    <section class="step" id="step-settings">
-      <h2>Step 1: Configuration</h2>
-      <div class="form-group">
-        <label for="endpoint">Dynatrace OTLP Log Ingest Endpoint</label>
-        <input type="text" id="endpoint" placeholder="e.g. https://abc123.live.dynatrace.com/api/v2/otlp/v1/logs" />
-      </div>
-      <div class="form-group">
-        <label for="token">API Token <small>(with logs.ingest scope)</small></label>
-        <input type="password" id="token" placeholder="dt0c01.ABC123..." />
-        <button id="help-token">Where do I get this?</button>
-      </div>
-      <div class="form-group">
-        <label for="delay">Delay Between Lines (ms)</label>
-        <input type="number" id="delay" value="1000" />
-      </div>
-    </section>
+  <main class="max-w-4xl mx-auto px-4 py-8">
+    <div class="space-y-6">
+      <section class="bg-white rounded-lg shadow p-6" id="step-settings">
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Step 1: Configuration</h2>
+        <div class="space-y-4">
+          <div>
+            <label for="endpoint" class="block text-sm font-medium text-gray-700">Dynatrace OTLP Log Ingest Endpoint</label>
+            <input type="text" id="endpoint" class="mt-1 block w-full rounded-md shadow-sm" placeholder="e.g. https://abc123.live.dynatrace.com/api/v2/otlp/v1/logs" />
+          </div>
+          <div>
+            <label for="token" class="block text-sm font-medium text-gray-700">API Token <small>(with logs.ingest scope)</small></label>
+            <div class="mt-1 flex">
+              <input type="password" id="token" class="block w-full rounded-md shadow-sm" placeholder="dt0c01.ABC123..." />
+              <button id="help-token" class="btn-secondary ml-2">Help</button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-    <section class="step" id="step-upload">
-      <h2>Step 2: Upload Log File</h2>
-      <input type="file" id="logFile" accept=".txt,.log,.json,.xml" />
-      <p id="file-status">No file selected.</p>
-    </section>
+      <section class="bg-white rounded-lg shadow p-6" id="step-upload">
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Step 2: Upload Log File</h2>
+        <div class="space-y-4">
+          <div class="flex items-center justify-center w-full">
+            <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+              <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                <svg class="w-8 h-8 mb-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p class="mb-2 text-sm text-gray-500">Click to upload or drag and drop</p>
+                <p class="text-xs text-gray-500">.txt, .log, .json, or .xml</p>
+              </div>
+              <input type="file" id="logFile" class="hidden" accept=".txt,.log,.json,.xml" />
+            </label>
+          </div>
+          <p id="file-status" class="text-sm text-gray-600">No file selected.</p>
+        </div>
+      </section>
 
-    <section class="step" id="step-replay">
-      <h2>Step 3: Replay Logs</h2>
-      <div class="actions">
-        <button id="startBtn">▶ Start Ingestion</button>
-        <button id="stopBtn" disabled>⏹ Stop</button>
-      </div>
-      <pre id="statusLog"></pre>
-    </section>
+      <section class="bg-white rounded-lg shadow p-6" id="step-replay">
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Step 3: Replay Logs</h2>
+        <div class="space-y-4">
+          <div class="form-group">
+            <label for="delay" class="block text-sm font-medium text-gray-700">Delay Between Lines (ms)</label>
+            <input type="number" id="delay" value="1000" class="mt-1 block w-full rounded-md shadow-sm" />
+          </div>
+          <div class="flex space-x-4">
+            <button id="startBtn" class="btn-primary">▶ Start Ingestion</button>
+            <button id="stopBtn" class="btn-secondary" disabled>⏹ Stop</button>
+          </div>
+          <div id="connection-status" class="hidden rounded-md p-4 mb-4"></div>
+          <pre id="statusLog" class="mt-4 p-4 bg-gray-50 rounded-lg text-sm font-mono h-64 overflow-y-auto"></pre>
+        </div>
+      </section>
+    </div>
   </main>
 
   <script src="main.js"></script>

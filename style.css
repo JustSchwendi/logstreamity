@@ -1,109 +1,98 @@
-/* style.css — Dynatrace-inspired theme */
+/* style.css — Modern Dynatrace theme */
+@import url('https://dt-cdn.net/fonts/BerninaSans/BerninaSans-Web-Regular-20190314.woff2');
+@import url('https://dt-cdn.net/fonts/BerninaSans/BerninaSans-Web-Bold-20190314.woff2');
 
 body {
-  font-family: 'Titillium Web', sans-serif;
-  background-color: #1A1A1A;
-  color: #FFFFFF;
+  font-family: 'Bernina Sans', sans-serif;
   margin: 0;
   padding: 0;
   line-height: 1.5;
-}
-
-header {
-  background-color: #652D90;
-  padding: 1rem;
-  text-align: center;
-}
-
-header h1 {
-  margin: 0;
-  font-size: 2rem;
-  color: #93DF00;
-}
-
-.subtitle {
-  color: #F4F4F4;
-  font-weight: 400;
-}
-
-main {
-  padding: 2rem;
-  max-width: 800px;
-  margin: auto;
-}
-
-.step {
-  background-color: #2B2B2B;
-  border: 1px solid #444;
-  border-radius: 8px;
-  padding: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.step h2 {
-  color: #93DF00;
-  font-size: 1.3rem;
-  margin-top: 0;
-}
-
-.form-group {
-  margin-bottom: 1.25rem;
-}
-
-label {
-  display: block;
-  margin-bottom: 0.4rem;
-  color: #F4F4F4;
-  font-weight: 600;
+  background-color: #F3F4F6;
+  color: #111827;
 }
 
 input[type="text"],
 input[type="password"],
 input[type="number"] {
   width: 100%;
-  padding: 0.6rem;
-  border: 1px solid #444;
-  border-radius: 4px;
-  background-color: #1A1A1A;
-  color: #fff;
+  padding: 0.625rem;
+  border: 1px solid #D1D5DB;
+  border-radius: 0.375rem;
+  background-color: white;
+  color: #111827;
+  transition: border-color 0.15s ease-in-out;
 }
 
-input[type="file"] {
-  margin-top: 0.5rem;
-  color: #fff;
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus {
+  outline: none;
+  border-color: #1496FF;
+  box-shadow: 0 0 0 3px rgba(20, 150, 255, 0.1);
 }
 
-button {
-  background-color: #93DF00;
-  color: #1A1A1A;
+.btn-primary {
+  background-color: #1496FF;
+  color: white;
   border: none;
-  padding: 0.6rem 1.2rem;
-  font-weight: bold;
-  border-radius: 4px;
+  padding: 0.625rem 1.25rem;
+  font-weight: 600;
+  border-radius: 0.375rem;
   cursor: pointer;
-  margin-top: 0.5rem;
-  margin-right: 0.5rem;
+  transition: background-color 0.15s ease-in-out;
 }
 
-button:disabled {
-  background-color: #666;
+.btn-primary:hover {
+  background-color: #0073E6;
+}
+
+.btn-primary:disabled {
+  background-color: #9CA3AF;
   cursor: not-allowed;
 }
 
-.actions {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
+.btn-secondary {
+  background-color: rgba(20, 150, 255, 0.1);
+  color: #1496FF;
+  border: none;
+  padding: 0.625rem 1.25rem;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
 }
 
-pre#statusLog {
-  background-color: #111;
-  border: 1px solid #333;
+.btn-secondary:hover {
+  background-color: rgba(20, 150, 255, 0.2);
+}
+
+.btn-secondary:disabled {
+  background-color: #E5E7EB;
+  color: #9CA3AF;
+  cursor: not-allowed;
+}
+
+#statusLog {
+  background-color: #F9FAFB;
+  border: 1px solid #E5E7EB;
   padding: 1rem;
-  border-radius: 6px;
-  max-height: 300px;
+  border-radius: 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
   overflow-y: auto;
-  color: #93DF00;
-  font-size: 0.85rem;
-  white-space: pre-wrap;
+  max-height: 300px;
+  color: #111827;
+}
+
+.connection-error {
+  background-color: #FEE2E2;
+  border: 1px solid #FCA5A5;
+  color: #991B1B;
+}
+
+.connection-success {
+  background-color: #DCFCE7;
+  border: 1px solid #86EFAC;
+  color: #166534;
 }
