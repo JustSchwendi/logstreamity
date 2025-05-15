@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dynatrace Log Ingest Playground</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header>
+    <h1>Dynatrace Log Ingest Playground</h1>
+    <p class="subtitle">Test ingesting any logs into your Dynatrace tenant using OpenTelemetry</p>
+  </header>
+
+  <main>
+    <section class="step" id="step-settings">
+      <h2>Step 1: Configuration</h2>
+      <div class="form-group">
+        <label for="endpoint">Dynatrace OTLP Log Ingest Endpoint</label>
+        <input type="text" id="endpoint" placeholder="e.g. https://abc123.live.dynatrace.com/api/v2/otlp/v1/logs" />
+      </div>
+      <div class="form-group">
+        <label for="token">API Token <small>(with logs.ingest scope)</small></label>
+        <input type="password" id="token" placeholder="dt0c01.ABC123..." />
+        <button id="help-token">Where do I get this?</button>
+      </div>
+      <div class="form-group">
+        <label for="delay">Delay Between Lines (ms)</label>
+        <input type="number" id="delay" value="1000" />
+      </div>
+    </section>
+
+    <section class="step" id="step-upload">
+      <h2>Step 2: Upload Log File</h2>
+      <input type="file" id="logFile" accept=".txt,.log,.json,.xml" />
+      <p id="file-status">No file selected.</p>
+    </section>
+
+    <section class="step" id="step-replay">
+      <h2>Step 3: Replay Logs</h2>
+      <div class="actions">
+        <button id="startBtn">▶ Start Ingestion</button>
+        <button id="stopBtn" disabled>⏹ Stop</button>
+      </div>
+      <pre id="statusLog"></pre>
+    </section>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>
