@@ -96,3 +96,8 @@ input[type="number"]:focus {
   border: 1px solid #86EFAC;
   color: #166534;
 }
+
+#file-status.text-dynatrace-primary {
+  font-size: 1.125rem;
+  font-weight: 700;
+}

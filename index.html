@@ -1,9 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="icon" type="image/png" href="live.png">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dynatrace Log Ingest Playground</title>
+  <title>Logstreamity Log Ingest Playground</title>
+  <meta name="description" content="Client-side Dynatrace log ingestion playground using Logs API v2. Ingest test logs securely and live from your browser. No data stored." />
+  <meta name="keywords" content="Dynatrace, Log Ingest, OpenTelemetry, Logs API v2, Observability, logstreamity, DevOps, SRE, demo tool" />
+  <meta name="author" content="Christian Schwendemann" />
+  <meta name="robots" content="index, follow" />
+  <meta property="og:title" content="Logstreamity - Dynatrace Log Ingest Playground" />
+  <meta property="og:description" content="Live test Dynatrace log ingestion with your own data — runs securely in the browser, nothing stored." />
+  <meta property="og:url" content="https://justschwendi.github.io/logstreamity" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://justschwendi.github.io/logstreamity/live.png" />
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -23,19 +33,33 @@
 <body class="bg-gray-50">
   <header class="bg-white shadow-sm">
     <div class="max-w-4xl mx-auto px-4 py-6">
-      <h1 class="text-3xl font-bold text-dynatrace-primary">Log Ingest Playground</h1>
-      <p class="text-gray-600 mt-2">Test ingesting logs into your Dynatrace tenant using OpenTelemetry</p>
+      <h1 class="text-3xl font-bold text-dynatrace-primary">Logstreamity - Ingest Playground</h1>
+      <p class="text-gray-600 mt-2">Test ingesting logs into your Dynatrace live and labs tenant using the Logs API v2</p>
     </div>
   </header>
 
   <main class="max-w-4xl mx-auto px-4 py-8">
+    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+      <p class="text-yellow-800">
+        ⚠️ This tool runs entirely in your browser and is client side processed.<br/>
+        No data, tokens, or logs are stored or transmitted to any other third-party servers than you provide.<br/><br/>
+        If you prefer to run this app independently, you can download or git clone the code from:<br/>
+        👉 <a href="https://github.com/JustSchwendi/logstreamity" target="_blank" class="underline text-dynatrace-primary">github.com/JustSchwendi/logstreamity</a><br/>
+        instead of using the hosted version at:<br/>
+        👉 <a href="https://justschwendi.github.io/logstreamity" target="_blank" class="underline text-dynatrace-primary">justschwendi.github.io/logstreamity</a>
+      </p>
+    </div>
+
     <div class="space-y-6">
       <section class="bg-white rounded-lg shadow p-6" id="step-settings">
         <h2 class="text-xl font-semibold text-gray-900 mb-4">Step 1: Configuration</h2>
         <div class="space-y-4">
           <div>
-            <label for="endpoint" class="block text-sm font-medium text-gray-700">Dynatrace OTLP Log Ingest Endpoint</label>
-            <input type="text" id="endpoint" class="mt-1 block w-full rounded-md shadow-sm" placeholder="e.g. https://abc123.live.dynatrace.com/api/v2/otlp/v1/logs" />
+            <label for="endpoint" class="block text-sm font-medium text-gray-700">Dynatrace Tenant URL</label>
+            <div class="flex items-center">
+              <input type="text" id="endpoint" class="mt-1 block w-1/2 rounded-md shadow-sm" value="https://your-tenant-id.live.dynatrace.com" />
+              <span class="ml-2 text-gray-600">/api/v2/logs/ingest</span>
+            </div>
           </div>
           <div>
             <label for="token" class="block text-sm font-medium text-gray-700">API Token <small>(with logs.ingest scope)</small></label>
@@ -62,7 +86,7 @@
               <input type="file" id="logFile" class="hidden" accept=".txt,.log,.json,.xml" />
             </label>
           </div>
-          <p id="file-status" class="text-sm text-gray-600">No file selected.</p>
+          <p id="file-status" class="text-sm text-gray-600 text-lg font-bold">No file selected.</p>
         </div>
       </section>
 
@@ -76,6 +100,7 @@
           <div class="flex space-x-4">
             <button id="startBtn" class="btn-primary">▶ Start Ingestion</button>
             <button id="stopBtn" class="btn-secondary" disabled>⏹ Stop</button>
+            <button id="loopBtn" class="btn-secondary" disabled>↻ Loop File Ingestion</button>
           </div>
           <div id="connection-status" class="hidden rounded-md p-4 mb-4"></div>
           <pre id="statusLog" class="mt-4 p-4 bg-gray-50 rounded-lg text-sm font-mono h-64 overflow-y-auto"></pre>
@@ -83,6 +108,16 @@
       </section>
     </div>
   </main>
+
+  <footer class="max-w-4xl mx-auto px-4 py-8">
+    <hr class="my-6 border-gray-200" />
+    <p class="text-sm text-gray-500 text-center mb-4">
+      This project is released into the public domain under the <a href="https://unlicense.org/" target="_blank" class="underline text-dynatrace-primary">Unlicense</a>. You are free to use, modify, distribute, and contribute without restriction.
+    </p>
+    <p class="text-sm text-gray-500 text-center">
+      This is a privately developed tool provided "as is" without warranty of any kind, express or implied. The developer Christian Schwendemann does not accept any liability for any damages, cost, losses, or anything else arising from the use of this tool. Use at your own risk and agree to these by using this site and tool.
+    </p>
+  </footer>
 
   <script src="main.js"></script>
 </body>

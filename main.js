@@ -1,8 +1,9 @@
-// main.js — Updated for Dynatrace Logs v2 JSON ingest
+// main.js — Updated for Dynatrace Logs v2 JSON ingest with file type handling
 
 let logLines = [];
 let ingestInterval = null;
 let currentLineIndex = 0;
+let loopEnabled = false;
 
 const endpointInput = document.getElementById('endpoint');
 const tokenInput = document.getElementById('token');
@@ -12,12 +13,41 @@ const fileStatus = document.getElementById('file-status');
 const statusLog = document.getElementById('statusLog');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
+const loopBtn = document.getElementById('loopBtn');
 const helpTokenBtn = document.getElementById('help-token');
 const connectionStatus = document.getElementById('connection-status');
 
 helpTokenBtn.addEventListener('click', () => {
   alert(`To create a Dynatrace API token:\n\n1. Log into your Dynatrace tenant\n2. Go to Access Tokens\n3. Click 'Generate new token'\n4. Add scope: logs.ingest\n5. Copy the token and paste it here`);
 });
+
+function processXMLContent(content) {
+  try {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(content, "text/xml");
+    const serializer = new XMLSerializer();
+    return Array.from(xmlDoc.documentElement.children).map(node => 
+      serializer.serializeToString(node)
+    );
+  } catch (error) {
+    logStatus(`⚠ XML parsing error: ${error.message}`);
+    return content.split(/\r?\n/).filter(line => line.trim().length > 0);
+  }
+}
+
+function processJSONContent(content) {
+  try {
+    const jsonData = JSON.parse(content);
+    if (Array.isArray(jsonData)) {
+      return jsonData.map(item => JSON.stringify(item));
+    } else {
+      return [JSON.stringify(jsonData)];
+    }
+  } catch (error) {
+    logStatus(`⚠ JSON parsing error: ${error.message}`);
+    return content.split(/\r?\n/).filter(line => line.trim().length > 0);
+  }
+}
 
 fileInput.addEventListener('change', () => {
   const file = fileInput.files[0];
@@ -29,7 +59,17 @@ fileInput.addEventListener('change', () => {
   const reader = new FileReader();
   reader.onload = function (e) {
     const content = e.target.result;
-    logLines = content.split(/\r?\n/).filter(line => line.trim().length > 0);
+    
+    // Process content based on file type
+    if (file.name.endsWith('.xml')) {
+      logLines = processXMLContent(content);
+    } else if (file.name.endsWith('.json')) {
+      logLines = processJSONContent(content);
+    } else {
+      // For .txt and .log files, split by lines
+      logLines = content.split(/\r?\n/).filter(line => line.trim().length > 0);
+    }
+    
     fileStatus.textContent = `${logLines.length} log lines ready for ingestion`;
     fileStatus.className = 'text-sm text-dynatrace-primary font-medium';
   };
@@ -83,15 +123,22 @@ startBtn.addEventListener('click', async () => {
   currentLineIndex = 0;
   startBtn.disabled = true;
   stopBtn.disabled = false;
+  loopBtn.disabled = false;
   statusLog.textContent = '';
 
   ingestInterval = setInterval(() => {
     if (currentLineIndex >= logLines.length) {
-      clearInterval(ingestInterval);
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      logStatus('✓ Ingestion completed successfully');
-      return;
+      if (loopEnabled) {
+        currentLineIndex = 0;
+        logStatus('↻ Restarting log ingestion from beginning');
+      } else {
+        clearInterval(ingestInterval);
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        loopBtn.disabled = true;
+        logStatus('✓ Ingestion completed successfully');
+        return;
+      }
     }
 
     const line = logLines[currentLineIndex++];
@@ -122,7 +169,16 @@ stopBtn.addEventListener('click', () => {
   clearInterval(ingestInterval);
   startBtn.disabled = false;
   stopBtn.disabled = true;
+  loopBtn.disabled = true;
+  loopEnabled = false;
+  loopBtn.classList.remove('bg-green-100');
   logStatus('⏹ Ingestion stopped by user.');
+});
+
+loopBtn.addEventListener('click', () => {
+  loopEnabled = !loopEnabled;
+  loopBtn.classList.toggle('bg-green-100');
+  logStatus(loopEnabled ? '↻ Loop mode enabled' : '↻ Loop mode disabled');
 });
 
 function buildPayload(line) {
