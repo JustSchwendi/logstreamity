@@ -1,0 +1,25 @@
+[
+  {
+    "content": "Exception: Custom error log sent via Logstreamity",
+    "log.source": "C:\WindowsAzure\Logs\Schwendemann.log",
+    "timestamp": "2025-05-20T14:44:31.0000",
+    "severity": "error",
+    "dt.source_entity": "PROCESS_GROUP_INSTANCE-5FF4BC238023E2D3",
+    "azure.location": "westeurope",
+    "dt.entity.host": "HOST-F6558F0BBBB9DF02"
+  },
+  {
+    "content": "Exception: Custom error log sent via Logstreamity",
+    "log.source": "/var/log/syslog",
+    "azure.location": "easteurope"
+    "timestamp": "2025-05-20T14:44:31.0000"
+  },
+  {
+    "content": "Exception: Custom error log sent via Generic Log Ingest",
+    "log.source": "/var/log/syslog"
+    "timestamp": "2025-05-20T14:44:31.0000"
+  },
+  {
+    "content": "Exception: Custom error log sent via Generic Log Ingest"
+  }
+]
