@@ -102,7 +102,7 @@
                   class="w-full p-2 border rounded" 
                   placeholder="Search attributes..." />
                 <div id="attribute-dropdown" 
-                  class="absolute w-full bg-white border rounded-b shadow-lg mt-1 max-h-40 overflow-y-auto hidden">
+                  class="absolute w-full bg-white border rounded-b shadow-lg mt-1 max-h-40 overflow-y-auto hidden z-10">
                 </div>
               </div>
               
@@ -123,14 +123,21 @@
       <section class="bg-white rounded-lg shadow p-6" id="step-replay">
         <h2 class="text-xl font-semibold text-gray-900 mb-4">Step 3: Replay Logs</h2>
         <div class="space-y-4">
-          <div class="form-group">
-            <label for="delay" class="block text-sm font-medium text-gray-700">Delay Between Lines (ms)</label>
-            <input type="number" id="delay" value="1000" class="mt-1 block w-full rounded-md shadow-sm" />
+          <div class="grid grid-cols-2 gap-4">
+            <div class="form-group">
+              <label for="delay" class="block text-sm font-medium text-gray-700">Delay Between Lines (ms)</label>
+              <input type="number" id="delay" value="1000" min="0" class="mt-1 block w-full rounded-md shadow-sm" />
+            </div>
+            <div class="form-group">
+              <label for="lineVolume" class="block text-sm font-medium text-gray-700">Line Volume</label>
+              <input type="number" id="lineVolume" value="1" min="1" class="mt-1 block w-full rounded-md shadow-sm" />
+            </div>
           </div>
           <div class="flex space-x-4">
             <button id="startBtn" class="btn-primary">▶ Start Ingestion</button>
             <button id="stopBtn" class="btn-secondary" disabled>⏹ Stop</button>
             <button id="loopBtn" class="btn-secondary" disabled>↻ Loop File Ingestion</button>
+            <button id="randomizeBtn" class="btn-secondary">🎲 Randomize delay and volume</button>
           </div>
           <div id="connection-status" class="hidden rounded-md p-4 mb-4"></div>
           <pre id="statusLog" class="mt-4 p-4 bg-gray-50 rounded-lg text-sm font-mono h-64 overflow-y-auto"></pre>

@@ -4,17 +4,20 @@ let logLines = [];
 let ingestInterval = null;
 let currentLineIndex = 0;
 let loopEnabled = false;
-let selectedAttributes = new Map(); // Store selected attributes and their values
+let selectedAttributes = new Map();
+let randomizeEnabled = false;
 
 const endpointInput = document.getElementById('endpoint');
 const tokenInput = document.getElementById('token');
 const delayInput = document.getElementById('delay');
+const lineVolumeInput = document.getElementById('lineVolume');
 const fileInput = document.getElementById('logFile');
 const fileStatus = document.getElementById('file-status');
 const statusLog = document.getElementById('statusLog');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const loopBtn = document.getElementById('loopBtn');
+const randomizeBtn = document.getElementById('randomizeBtn');
 const helpTokenBtn = document.getElementById('help-token');
 const connectionStatus = document.getElementById('connection-status');
 const attributeSection = document.getElementById('attribute-section');
@@ -25,36 +28,46 @@ const saveToFileBtn = document.getElementById('save-to-file');
 
 // Load attribute keys
 const attributeKeys = [
-  "audit.action", "audit.identity", "audit.result", /* ... full list from attribute_keys ... */
+  "audit.action", "audit.identity", "audit.result", "aws.account.id", "aws.arn",
+  "aws.log_group", "aws.log_stream", "aws.region", "aws.resource.id", "aws.resource.type",
+  "aws.service", "azure.location", "azure.resource.group", "azure.resource.id",
+  "azure.resource.name", "azure.resource.type", "azure.subscription", "cloud.account.id",
+  "cloud.availability_zone", "cloud.provider", "cloud.region", "container.image.name",
+  "container.image.tag", "container.name", "db.cassandra.keyspace", "db.connection_string",
+  "db.hbase.namespace", "db.jdbc.driver_classname", "db.mongodb.collection",
+  "db.mssql.instance_name", "db.name", "db.operation", "db.redis.database_index",
+  "db.statement", "db.system", "db.user", "device.address", "dt.active_gate.group.name",
+  "dt.active_gate.id", "dt.entity.host", "dt.source_entity", "log.source"
 ];
 
 helpTokenBtn.addEventListener('click', () => {
   alert(`To create a Dynatrace API token:\n\n1. Log into your Dynatrace tenant\n2. Go to Access Tokens\n3. Click 'Generate new token'\n4. Add scope: logs.ingest\n5. Copy the token and paste it here`);
 });
 
+injectAttributesBtn.addEventListener('click', () => {
+  attributeSection.classList.toggle('hidden');
+});
+
 function processEndpointUrl(url) {
-  // Remove trailing slash if present
   url = url.trim().replace(/\/$/, '');
-  
-  // Remove .apps. from the domain if present
   url = url.replace('.apps.', '.');
   
-  // Check if the URL already ends with the API path
   if (!url.endsWith('/api/v2/logs/ingest')) {
-    // Remove any path that might exist after the domain
     url = url.split('/').slice(0, 3).join('/');
-    // Append the correct API path
     url = `${url}/api/v2/logs/ingest`;
   }
   
   return url;
 }
 
-// Add blur event listener to process URL when focus leaves the input
 endpointInput.addEventListener('blur', () => {
   const processedUrl = processEndpointUrl(endpointInput.value);
   endpointInput.value = processedUrl.split('/api/v2/logs/ingest')[0];
 });
+
+function getRandomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
 function addAttribute(key, value) {
   selectedAttributes.set(key, value);
@@ -107,6 +120,12 @@ attributeSearch.addEventListener('input', (e) => {
     dropdown.appendChild(option);
   });
   dropdown.style.display = results.length ? 'block' : 'none';
+});
+
+randomizeBtn.addEventListener('click', () => {
+  randomizeEnabled = !randomizeEnabled;
+  randomizeBtn.classList.toggle('bg-green-100');
+  logStatus(randomizeEnabled ? '🎲 Randomization enabled' : '🎲 Randomization disabled');
 });
 
 saveToFileBtn.addEventListener('click', () => {
@@ -226,7 +245,6 @@ function buildPayload(line) {
     };
   }
 
-  // Add selected attributes
   selectedAttributes.forEach((value, key) => {
     payload[key] = value;
   });
@@ -234,12 +252,36 @@ function buildPayload(line) {
   return payload;
 }
 
+async function sendLogBatch(endpoint, token, lines) {
+  const payloads = lines.map(line => buildPayload(line));
+  
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Api-Token ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payloads)
+    });
+
+    if (response.ok) {
+      logStatus(`✓ Sent batch of ${lines.length} lines`);
+    } else {
+      logStatus(`⚠ Error (${response.status}) sending batch`);
+    }
+  } catch (error) {
+    logStatus(`⚠ Network error: ${error.message}`);
+  }
+}
+
 startBtn.addEventListener('click', async () => {
   const endpoint = endpointInput.value.trim();
   const token = tokenInput.value.trim();
-  const delay = parseInt(delayInput.value.trim(), 10);
+  const baseDelay = parseInt(delayInput.value.trim(), 10);
+  const baseVolume = parseInt(lineVolumeInput.value.trim(), 10);
 
-  if (!endpoint || !token || !delay || logLines.length === 0) {
+  if (!endpoint || !token || !baseDelay || logLines.length === 0) {
     alert('Please fill all fields and upload a log file.');
     return;
   }
@@ -256,7 +298,7 @@ startBtn.addEventListener('click', async () => {
   loopBtn.disabled = false;
   statusLog.textContent = '';
 
-  ingestInterval = setInterval(() => {
+  ingestInterval = setInterval(async () => {
     if (currentLineIndex >= logLines.length) {
       if (loopEnabled) {
         currentLineIndex = 0;
@@ -271,28 +313,18 @@ startBtn.addEventListener('click', async () => {
       }
     }
 
-    const line = logLines[currentLineIndex++];
-    const payload = buildPayload(line);
-
-    fetch(processedEndpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Api-Token ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    })
-      .then(response => {
-        if (response.ok) {
-          logStatus(`✓ Sent: ${line}`);
-        } else {
-          logStatus(`⚠ Error (${response.status}): ${line}`);
-        }
-      })
-      .catch(err => {
-        logStatus(`⚠ Network error: ${err.message}`);
-      });
-  }, delay);
+    const delay = randomizeEnabled ? getRandomInt(0, baseDelay) : baseDelay;
+    const volume = randomizeEnabled ? getRandomInt(1, baseVolume) : baseVolume;
+    
+    const batchLines = logLines.slice(currentLineIndex, currentLineIndex + volume);
+    currentLineIndex += volume;
+    
+    await sendLogBatch(processedEndpoint, token, batchLines);
+    
+    if (randomizeEnabled) {
+      logStatus(`ℹ Using random delay: ${delay}ms, volume: ${volume}`);
+    }
+  }, baseDelay);
 });
 
 stopBtn.addEventListener('click', () => {
