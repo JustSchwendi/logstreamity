@@ -1,9 +1,10 @@
-// main.js — Updated for Dynatrace Logs v2 JSON ingest with file type handling
+// main.js — Updated for Dynatrace Logs v2 JSON ingest with file type handling and attribute support
 
 let logLines = [];
 let ingestInterval = null;
 let currentLineIndex = 0;
 let loopEnabled = false;
+let selectedAttributes = new Map(); // Store selected attributes and their values
 
 const endpointInput = document.getElementById('endpoint');
 const tokenInput = document.getElementById('token');
@@ -16,9 +17,117 @@ const stopBtn = document.getElementById('stopBtn');
 const loopBtn = document.getElementById('loopBtn');
 const helpTokenBtn = document.getElementById('help-token');
 const connectionStatus = document.getElementById('connection-status');
+const attributeSection = document.getElementById('attribute-section');
+const attributeSearch = document.getElementById('attribute-search');
+const attributeList = document.getElementById('attribute-list');
+const injectAttributesBtn = document.getElementById('inject-attributes');
+const saveToFileBtn = document.getElementById('save-to-file');
+
+// Load attribute keys
+const attributeKeys = [
+  "audit.action", "audit.identity", "audit.result", /* ... full list from attribute_keys ... */
+];
 
 helpTokenBtn.addEventListener('click', () => {
   alert(`To create a Dynatrace API token:\n\n1. Log into your Dynatrace tenant\n2. Go to Access Tokens\n3. Click 'Generate new token'\n4. Add scope: logs.ingest\n5. Copy the token and paste it here`);
+});
+
+function processEndpointUrl(url) {
+  // Remove trailing slash if present
+  url = url.trim().replace(/\/$/, '');
+  
+  // Remove .apps. from the domain if present
+  url = url.replace('.apps.', '.');
+  
+  // Check if the URL already ends with the API path
+  if (!url.endsWith('/api/v2/logs/ingest')) {
+    // Remove any path that might exist after the domain
+    url = url.split('/').slice(0, 3).join('/');
+    // Append the correct API path
+    url = `${url}/api/v2/logs/ingest`;
+  }
+  
+  return url;
+}
+
+// Add blur event listener to process URL when focus leaves the input
+endpointInput.addEventListener('blur', () => {
+  const processedUrl = processEndpointUrl(endpointInput.value);
+  endpointInput.value = processedUrl.split('/api/v2/logs/ingest')[0];
+});
+
+function addAttribute(key, value) {
+  selectedAttributes.set(key, value);
+  updateAttributeList();
+}
+
+function removeAttribute(key) {
+  selectedAttributes.delete(key);
+  updateAttributeList();
+}
+
+function updateAttributeList() {
+  attributeList.innerHTML = '';
+  selectedAttributes.forEach((value, key) => {
+    const item = document.createElement('div');
+    item.className = 'flex items-center space-x-2 mb-2';
+    item.innerHTML = `
+      <input type="text" value="${key}" readonly class="bg-gray-100 rounded px-2 py-1 flex-1" />
+      <input type="text" value="${value}" 
+        onchange="selectedAttributes.set('${key}', this.value)"
+        class="rounded border px-2 py-1 flex-1" />
+      <button onclick="removeAttribute('${key}')" 
+        class="bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200">
+        -
+      </button>
+    `;
+    attributeList.appendChild(item);
+  });
+}
+
+function fuzzySearch(query, keys) {
+  return keys.filter(key => 
+    key.toLowerCase().includes(query.toLowerCase())
+  );
+}
+
+attributeSearch.addEventListener('input', (e) => {
+  const results = fuzzySearch(e.target.value, attributeKeys);
+  const dropdown = document.getElementById('attribute-dropdown');
+  dropdown.innerHTML = '';
+  results.slice(0, 5).forEach(key => {
+    const option = document.createElement('div');
+    option.className = 'p-2 hover:bg-gray-100 cursor-pointer';
+    option.textContent = key;
+    option.onclick = () => {
+      addAttribute(key, '');
+      dropdown.innerHTML = '';
+      attributeSearch.value = '';
+    };
+    dropdown.appendChild(option);
+  });
+  dropdown.style.display = results.length ? 'block' : 'none';
+});
+
+saveToFileBtn.addEventListener('click', () => {
+  const template = {
+    content: "Sample log content",
+    timestamp: new Date().toISOString(),
+    severity: "INFO",
+    "log.source": "logstreamity"
+  };
+  
+  selectedAttributes.forEach((value, key) => {
+    template[key] = value;
+  });
+  
+  const blob = new Blob([JSON.stringify([template], null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'log_template.json';
+  a.click();
+  URL.revokeObjectURL(url);
 });
 
 function processXMLContent(content) {
@@ -49,24 +158,6 @@ function processJSONContent(content) {
   }
 }
 
-function processEndpointUrl(url) {
-  // Remove trailing slash if present
-  url = url.trim().replace(/\/$/, '');
-  
-  // Remove .apps. from the domain if present
-  url = url.replace('.apps.', '.');
-  
-  // Check if the URL already ends with the API path
-  if (!url.endsWith('/api/v2/logs/ingest')) {
-    // Remove any path that might exist after the domain
-    url = url.split('/').slice(0, 3).join('/');
-    // Append the correct API path
-    url = `${url}/api/v2/logs/ingest`;
-  }
-  
-  return url;
-}
-
 fileInput.addEventListener('change', () => {
   const file = fileInput.files[0];
   if (!file) {
@@ -78,18 +169,16 @@ fileInput.addEventListener('change', () => {
   reader.onload = function (e) {
     const content = e.target.result;
     
-    // Process content based on file type
     if (file.name.endsWith('.xml')) {
       logLines = processXMLContent(content);
     } else if (file.name.endsWith('.json')) {
       logLines = processJSONContent(content);
     } else {
-      // For .txt and .log files, split by lines
       logLines = content.split(/\r?\n/).filter(line => line.trim().length > 0);
     }
     
     fileStatus.textContent = `${logLines.length} log lines ready for ingestion`;
-    fileStatus.className = 'text-sm text-dynatrace-primary font-medium';
+    fileStatus.className = 'text-lg font-bold text-dynatrace-primary';
   };
   reader.readAsText(file);
 });
@@ -122,6 +211,27 @@ async function testConnection(endpoint, token) {
     connectionStatus.style.display = 'block';
     return false;
   }
+}
+
+function buildPayload(line) {
+  let payload;
+  try {
+    payload = JSON.parse(line);
+  } catch {
+    payload = {
+      content: line,
+      "log.source": "logstreamity",
+      timestamp: Date.now(),
+      severity: "INFO"
+    };
+  }
+
+  // Add selected attributes
+  selectedAttributes.forEach((value, key) => {
+    payload[key] = value;
+  });
+
+  return payload;
 }
 
 startBtn.addEventListener('click', async () => {
@@ -201,25 +311,8 @@ loopBtn.addEventListener('click', () => {
   logStatus(loopEnabled ? '↻ Loop mode enabled' : '↻ Loop mode disabled');
 });
 
-function buildPayload(line) {
-  return {
-    content: line,
-    "log.source": "logstreamity",
-    timestamp: Date.now(),
-    severity: "INFO"
-  };
-}
-
 function logStatus(msg) {
   const now = new Date().toLocaleTimeString();
   statusLog.textContent += `[${now}] ${msg}\n`;
   statusLog.scrollTop = statusLog.scrollHeight;
 }
-
-// Add input event listener to automatically process the endpoint URL
-endpointInput.addEventListener('input', () => {
-  const processedUrl = processEndpointUrl(endpointInput.value);
-  if (processedUrl !== endpointInput.value) {
-    endpointInput.value = processedUrl.split('/api/v2/logs/ingest')[0];
-  }
-});

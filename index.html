@@ -41,8 +41,7 @@
   <main class="max-w-4xl mx-auto px-4 py-8">
     <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
       <p class="text-yellow-800">
-        ⚠️ This tool runs entirely in your browser and is client side processed.<br/>
-        No data, tokens, or logs are stored or transmitted to any other third-party servers than you provide.<br/><br/>
+        ⚠️ The provided data is not persistent or saved. This web application is client side rendered and executed. The token and ingestion will be processed on your client device.<br/><br/>
         If you prefer to run this app independently, you can download or git clone the code from:<br/>
         👉 <a href="https://github.com/JustSchwendi/logstreamity" target="_blank" class="underline text-dynatrace-primary">github.com/JustSchwendi/logstreamity</a><br/>
         instead of using the hosted version at:<br/>
@@ -86,7 +85,38 @@
               <input type="file" id="logFile" class="hidden" accept=".txt,.log,.json,.xml" />
             </label>
           </div>
-          <p id="file-status" class="text-sm text-gray-600 text-lg font-bold">No file selected.</p>
+          <p id="file-status" class="text-lg font-bold text-dynatrace-primary">No file selected.</p>
+          
+          <div class="mt-4">
+            <button id="inject-attributes" class="btn-secondary">
+              Inject Attributes
+            </button>
+            
+            <div id="attribute-section" class="mt-4 hidden">
+              <p class="text-sm text-gray-600 mb-2">
+                This feature allows you to parse the logs into json format and inject the attributes below to link them to existing entities
+              </p>
+              
+              <div class="relative">
+                <input type="text" id="attribute-search" 
+                  class="w-full p-2 border rounded" 
+                  placeholder="Search attributes..." />
+                <div id="attribute-dropdown" 
+                  class="absolute w-full bg-white border rounded-b shadow-lg mt-1 max-h-40 overflow-y-auto hidden">
+                </div>
+              </div>
+              
+              <div id="attribute-list" class="mt-4 space-y-2">
+                <!-- Attribute items will be inserted here -->
+              </div>
+              
+              <div class="mt-4 flex space-x-2">
+                <button id="save-to-file" class="btn-secondary">
+                  Save to File
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
