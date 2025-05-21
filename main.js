@@ -49,6 +49,24 @@ function processJSONContent(content) {
   }
 }
 
+function processEndpointUrl(url) {
+  // Remove trailing slash if present
+  url = url.trim().replace(/\/$/, '');
+  
+  // Remove .apps. from the domain if present
+  url = url.replace('.apps.', '.');
+  
+  // Check if the URL already ends with the API path
+  if (!url.endsWith('/api/v2/logs/ingest')) {
+    // Remove any path that might exist after the domain
+    url = url.split('/').slice(0, 3).join('/');
+    // Append the correct API path
+    url = `${url}/api/v2/logs/ingest`;
+  }
+  
+  return url;
+}
+
 fileInput.addEventListener('change', () => {
   const file = fileInput.files[0];
   if (!file) {
@@ -78,7 +96,8 @@ fileInput.addEventListener('change', () => {
 
 async function testConnection(endpoint, token) {
   try {
-    const response = await fetch(endpoint, {
+    const processedEndpoint = processEndpointUrl(endpoint);
+    const response = await fetch(processedEndpoint, {
       method: 'POST',
       headers: {
         'Authorization': `Api-Token ${token}`,
@@ -120,6 +139,7 @@ startBtn.addEventListener('click', async () => {
     return;
   }
 
+  const processedEndpoint = processEndpointUrl(endpoint);
   currentLineIndex = 0;
   startBtn.disabled = true;
   stopBtn.disabled = false;
@@ -144,7 +164,7 @@ startBtn.addEventListener('click', async () => {
     const line = logLines[currentLineIndex++];
     const payload = buildPayload(line);
 
-    fetch(endpoint, {
+    fetch(processedEndpoint, {
       method: 'POST',
       headers: {
         'Authorization': `Api-Token ${token}`,
@@ -195,3 +215,11 @@ function logStatus(msg) {
   statusLog.textContent += `[${now}] ${msg}\n`;
   statusLog.scrollTop = statusLog.scrollHeight;
 }
+
+// Add input event listener to automatically process the endpoint URL
+endpointInput.addEventListener('input', () => {
+  const processedUrl = processEndpointUrl(endpointInput.value);
+  if (processedUrl !== endpointInput.value) {
+    endpointInput.value = processedUrl.split('/api/v2/logs/ingest')[0];
+  }
+});
