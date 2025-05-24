@@ -1,36 +1,42 @@
-// Attributes management module
-export const loadAttributes = async () => {
+// src/attributes.js
+
+export function loadAttributes() {
   try {
-    const response = await fetch('attributes.json');
-    const attributes = await response.json();
-    return attributes;
-  } catch (error) {
-    console.error('Error loading attributes:', error);
+    const data = JSON.parse(localStorage.getItem('logstreamityAttrs'));
+    return new Map(Object.entries(data || {}));
+  } catch {
+    return new Map();
+  }
+}
+
+export function saveAttributes(map) {
+  const obj = Object.fromEntries(map);
+  localStorage.setItem('logstreamityAttrs', JSON.stringify(obj));
+}
+
+export function loadAttributesFromFile(file) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const obj = JSON.parse(e.target.result);
+        resolve(new Map(Object.entries(obj)));
+      } catch {
+        alert('Invalid JSON in file');
+        resolve(new Map());
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+export function fuzzySearchAttributes(search) {
+  try {
+    const data = JSON.parse(localStorage.getItem('logstreamityAttrs')) || {};
+    const keys = Object.keys(data);
+    const query = search.toLowerCase().trim();
+    return keys.filter(k => k.toLowerCase().includes(query)).slice(0, 8);
+  } catch {
     return [];
   }
-};
-
-export const saveAttributes = (attributes) => {
-  const attributeObject = {};
-  attributes.forEach((key, value) => {
-    attributeObject[key] = value;
-  });
-  
-  const blob = new Blob([JSON.stringify(attributeObject, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'attributes.json';
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-export const loadAttributesFromFile = async (file) => {
-  try {
-    const text = await file.text();
-    return JSON.parse(text);
-  } catch (error) {
-    console.error('Error loading attributes from file:', error);
-    return {};
-  }
-};
+}

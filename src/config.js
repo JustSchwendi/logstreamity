@@ -1,35 +1,40 @@
-// Configuration management module
-export const saveConfig = (endpoint, token) => {
-  const config = { endpoint, token };
-  const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'config.json';
-  a.click();
-  URL.revokeObjectURL(url);
-};
+// Config save/load/auto logic for Logstreamity
 
-export const loadConfig = async (file) => {
+const CONFIG_KEY = 'logstreamityConfig';
+
+export function saveConfig(endpoint, token) {
+  const config = { endpoint, token };
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+  alert('Configuration saved to browser storage.');
+}
+
+export async function loadConfig(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const config = JSON.parse(e.target.result);
+        if (config.endpoint && config.token) {
+          resolve(config);
+        } else {
+          alert('Invalid config file.');
+          resolve(null);
+        }
+      } catch (e) {
+        alert('Could not parse config file.');
+        resolve(null);
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+export async function autoLoadConfig() {
+  const raw = localStorage.getItem(CONFIG_KEY);
+  if (!raw) return null;
   try {
-    const text = await file.text();
-    const config = JSON.parse(text);
-    return config;
-  } catch (error) {
-    console.error('Error loading config:', error);
+    return JSON.parse(raw);
+  } catch {
     return null;
   }
-};
-
-export const autoLoadConfig = async () => {
-  try {
-    const response = await fetch('config.json');
-    if (response.ok) {
-      const config = await response.json();
-      return config;
-    }
-  } catch (error) {
-    console.error('No config file found:', error);
-  }
-  return null;
-};
+}

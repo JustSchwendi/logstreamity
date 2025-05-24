@@ -173,6 +173,7 @@
   "snmp.trap_oid",
   "span_id",
   "trace_id",
+  "timestamp",
   "winlog.eventid",
   "winlog.keywords",
   "winlog.level",

@@ -13,7 +13,8 @@ body {
 
 input[type="text"],
 input[type="password"],
-input[type="number"] {
+input[type="number"],
+input[type="datetime-local"] {
   width: 100%;
   padding: 0.625rem;
   border: 1px solid #D1D5DB;
@@ -25,7 +26,8 @@ input[type="number"] {
 
 input[type="text"]:focus,
 input[type="password"]:focus,
-input[type="number"]:focus {
+input[type="number"]:focus,
+input[type="datetime-local"]:focus {
   outline: none;
   border-color: #1496FF;
   box-shadow: 0 0 0 3px rgba(20, 150, 255, 0.1);
@@ -72,6 +74,11 @@ input[type="number"]:focus {
   cursor: not-allowed;
 }
 
+.btn-secondary.active {
+  background-color: #1496FF;
+  color: white;
+}
+
 #statusLog {
   background-color: #F9FAFB;
   border: 1px solid #E5E7EB;
@@ -100,4 +107,66 @@ input[type="number"]:focus {
 #file-status.text-dynatrace-primary {
   font-size: 1.125rem;
   font-weight: 700;
+}
+
+.section-collapsed .section-content {
+  display: none;
+}
+
+.section-collapsed h2 {
+  margin-bottom: 0;
+}
+
+.toggle-section {
+  padding: 0.5rem;
+  transition: transform 0.2s;
+}
+
+.section-collapsed .toggle-section span {
+  transform: rotate(-90deg);
+  display: inline-block;
+}
+
+#sidebar {
+  transition: width 0.3s ease;
+}
+
+.sidebar-collapsed {
+  width: 0 !important;
+  overflow: hidden;
+}
+
+.worker-item {
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  border-radius: 0.375rem;
+  background-color: #F3F4F6;
+}
+
+.worker-item.active {
+  background-color: rgba(20, 150, 255, 0.1);
+}
+
+.worker-menu {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.5rem;
+  background-color: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 0.375rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: none;
+}
+
+.worker-menu.active {
+  display: block;
+}
+
+.worker-menu-item {
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+.worker-menu-item:hover {
+  background-color: #F3F4F6;
 }

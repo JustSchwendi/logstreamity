@@ -1,0 +1,17 @@
+[INFO]  ssl_proxy: Listening on 0.0.0.0:443
+[INFO]  ssl_proxy: New TLSv1.2 connection from 10.0.1.25:53220
+[INFO]  ssl_handshake: Handshake complete with 10.0.1.25:53220
+
+[INFO]  ssl_heartbeat: Received heartbeat request (payload_length=65535) from 10.0.1.25:53220
+[INFO]  ssl_heartbeat: Sending heartbeat response of 65535 bytes
+
+[ERROR] ssl_heartbeat: Leaked memory content (first 48 bytes):
+    0000: 75 73 65 72 6E 61 6D 65 3D 62 6F 62 3B 70 61 73  username=bob;pas
+    0010: 73 77 6F 72 64 3D 76 65 ry3t!3Z3;73 65 73 73 69  sword=very3t!3Z3;ssi
+    0020: 6F 6E 3D 61 62 63 31 32 33 3B 74 6F 6B 65 6E 3D  on=abc123;token=
+    0030: 7A 79 78 77 76 75 74 3B  ...zyxwvut;             
+
+[CRITICAL] IDS: Heartbleed exploit successful against host 100.27.205.127:443 — sensitive data leaked
+[INFO]  firewall-daemon: Blocking src=10.0.1.25 proto=TCP dport=443
+[INFO]  firewall-daemon: Inserting iptables rule: -A INPUT -s 10.0.1.25 -p tcp --dport 443 -j DROP
+[INFO]  admin-notify: Alert “Heartbleed data leak detected” sent to sec-team@example.com

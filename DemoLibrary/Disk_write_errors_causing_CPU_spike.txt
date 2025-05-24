@@ -1,0 +1,53 @@
+[INFO] kernel: sd 3:0:0:0: [sdb] WRITE command timeout (sector 524288), attempting retry (1/3)
+[INFO] kernel: sd 3:0:0:0: [sdb] WRITE command successful after retry
+[WARN] kernel: EXT4-fs warning (device sdb1): ext4_end_bio: I/O error -5 writing to inode 32514 (offset 4194304 size 131072 starting block 524288)
+[ERROR] kernel: Buffer I/O error on device sdb1, logical block 524288
+[ERROR] kernel: sd 3:0:0:0: [sdb] Unhandled sense code
+[ERROR] kernel: sd 3:0:0:0: [sdb] Result: hostbyte=DID_BAD_TARGET driverbyte=DRIVER_OK
+[ERROR] kernel: sd 3:0:0:0: [sdb] CDB: Write(10): 2a 00 00 08 00 00 00 00 08 00
+[ERROR] kernel: blk_update_request: I/O error, dev sdb, sector 524288
+[CRITICAL] kernel: sd 3:0:0:0: [sdb] Medium error, retries exhausted
+[CRITICAL] kernel: blk_update_request: critical medium error, dev sdb, sector 524289
+[ERROR] kernel: EXT4-fs error (device sdb1): ext4_journal_check_start:56: Detected aborted journal
+[CRITICAL] kernel: EXT4-fs (sdb1): Remounting filesystem read-only
+[WARN] kernel: EXT4-fs (sdb1): previous I/O error to superblock detected
+[INFO] kernel: EXT4-fs (sdb1): Recommend running fsck to check filesystem integrity
+[WARN] smartd[2711]: Device: /dev/sdb [SAT], 17 Currently unreadable (pending) sectors detected
+[CRITICAL] smartd[2711]: Device: /dev/sdb [SAT], FAILED SMART self-check. Back up data immediately!
+[CRITICAL] smartd[2711]: Device: /dev/sdb [SAT], Severe unrecoverable errors found, disk replacement strongly recommended.
+
+[WARN] kernel: task jbd2/sdb1-8:432 blocked for more than 120 seconds.
+[WARN] kernel: task kworker/u8:3:789 blocked for more than 120 seconds.
+[INFO] kernel: INFO: task jbd2/sdb1-8:432 state D (uninterruptible sleep) for 121 seconds
+[INFO] kernel: INFO: task kworker/u8:3:789 state D (uninterruptible sleep) for 121 seconds
+
+[WARN] kernel: CPU: 3 PID: 789 Comm: kworker/u8:3 Tainted: G        W    5.4.0-109-generic #123-Ubuntu
+[WARN] kernel: Call Trace:
+[WARN] kernel:  __schedule+0x2e3/0x740
+[WARN] kernel:  schedule+0x42/0xb0
+[WARN] kernel:  io_schedule+0x16/0x40
+[WARN] kernel:  wait_on_page_bit_common+0x114/0x380
+[WARN] kernel:  __filemap_fdatawait_range+0xa5/0x110
+[WARN] kernel:  file_write_and_wait_range+0x56/0x90
+[WARN] kernel:  ext4_sync_file+0x140/0x390
+[WARN] kernel:  vfs_fsync_range+0x4c/0x80
+[WARN] kernel:  do_fsync+0x3d/0x70
+[WARN] kernel:  __x64_sys_fdatasync+0x13/0x20
+[WARN] kernel:  do_syscall_64+0x57/0x190
+[WARN] kernel:  entry_SYSCALL_64_after_hwframe+0x44/0xa9
+
+[WARN] kernel: perf: interrupt took too long (2503 > 2500), lowering kernel.perf_event_max_sample_rate to 79800
+[WARN] kernel: perf: interrupt took too long (5040 > 5000), lowering kernel.perf_event_max_sample_rate to 39500
+[WARN] kernel: perf: interrupt took too long (10123 > 10000), lowering kernel.perf_event_max_sample_rate to 19700
+
+[ERROR] kernel: INFO: rcu_sched self-detected stall on CPU
+[ERROR] kernel: rcu_sched kthread starved for 10000 jiffies! g18446744073709551615 f0x0 RCU_GP_WAIT_FQS(5) ->state=0x0
+[ERROR] kernel: RCU grace-period kthread stack dump:
+[ERROR] kernel: rcu_sched      D    0   100      2 0x80004000
+[ERROR] kernel: Call Trace:
+[ERROR] kernel:  __schedule+0x2e3/0x740
+[ERROR] kernel:  schedule+0x42/0xb0
+[ERROR] kernel:  schedule_timeout+0x1f1/0x310
+[ERROR] kernel:  rcu_gp_kthread+0x405/0x8c0
+[ERROR] kernel:  kthread+0x106/0x140
+[ERROR] kernel:  ret_from_fork+0x35/0x40

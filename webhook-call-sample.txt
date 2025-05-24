@@ -1,0 +1,37 @@
+# Logstreamity Webhook API Documentation
+
+## Endpoint
+POST /api/webhook
+
+## Request Body (JSON)
+{
+  "worker": {
+    "name": "my-worker",           // Optional: Name for the worker (default: auto-generated)
+    "description": "Test worker"   // Optional: Description of the worker
+  },
+  "config": {
+    "endpoint": "https://abc12345.live.dynatrace.com",  // Required: Dynatrace tenant URL
+    "token": "dt0c01.ABC123...",                        // Required: API token with logs.ingest scope
+    "mode": "sequential",          // Optional: "sequential" (default), "historic", or "scattered"
+    "delay": 1000,                // Optional: Delay between lines in ms (default: 1000)
+    "lineVolume": 1,              // Optional: Number of lines to ingest at once (default: 1)
+    "randomize": false,           // Optional: Randomize delay and volume (default: false)
+    "startTime": "2025-05-22T15:00:00",  // Required for historic/scattered modes
+    "endTime": "2025-05-22T16:00:00",    // Required for scattered mode
+    "chunks": 10                   // Required for scattered mode
+  },
+  "logs": "./local-logfile.txt"
+}
+
+## Response
+{
+  "workerId": "w123456",         // Unique worker ID
+  "status": "started",           // Worker status
+  "message": "Worker started successfully"
+}
+
+## Notes
+- Loop mode is not supported via webhook to prevent endless ingestion
+- Timestamps cannot be more than 24 hours in the past
+- Empty lines are automatically skipped
+- [[[SLEEP X]]] commands can be used to add delays (X in milliseconds)

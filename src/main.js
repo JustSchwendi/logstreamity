@@ -1,18 +1,10 @@
-// Main application module
-import { saveConfig, loadConfig, autoLoadConfig } from './config.js';
+// src/main.js
+
+import { updateLabels, updateAttributeList, showAttributeDropdown } from './ui.js';
 import { loadAttributes, saveAttributes, loadAttributesFromFile } from './attributes.js';
-import { updateLabels, updateAttributeList } from './ui.js';
 import { processEndpointUrl, sendLogBatch } from './ingest.js';
+import { WorkerManager } from './worker.js';
 
-let logLines = [];
-let ingestInterval = null;
-let currentLineIndex = 0;
-let loopEnabled = false;
-let selectedAttributes = new Map();
-let randomizeEnabled = false;
-let attributeKeys = [];
-
-// DOM Elements
 const endpointInput = document.getElementById('endpoint');
 const tokenInput = document.getElementById('token');
 const delayInput = document.getElementById('delay');
@@ -20,235 +12,170 @@ const lineVolumeInput = document.getElementById('lineVolume');
 const fileInput = document.getElementById('logFile');
 const fileStatus = document.getElementById('file-status');
 const statusLog = document.getElementById('statusLog');
+const randomizeBtn = document.getElementById('randomizeBtn');
+const attributeList = document.getElementById('attribute-list');
+const attributeSearch = document.getElementById('attribute-search');
+const injectAttributesBtn = document.getElementById('inject-attributes');
+const attributeSection = document.getElementById('attribute-section');
+const saveToFileBtn = document.getElementById('save-to-file');
+const readFromFileBtn = document.getElementById('read-from-file');
+const attributesFileInput = document.getElementById('attributes-file');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const loopBtn = document.getElementById('loopBtn');
-const randomizeBtn = document.getElementById('randomizeBtn');
-const helpTokenBtn = document.getElementById('help-token');
-const connectionStatus = document.getElementById('connection-status');
-const attributeSection = document.getElementById('attribute-section');
-const attributeSearch = document.getElementById('attribute-search');
-const attributeList = document.getElementById('attribute-list');
-const injectAttributesBtn = document.getElementById('inject-attributes');
-const saveToFileBtn = document.getElementById('save-to-file');
-const readFromFileBtn = document.getElementById('read-from-file');
 const saveConfigBtn = document.getElementById('save-config');
 const loadConfigBtn = document.getElementById('load-config');
 const configFileInput = document.getElementById('config-file');
-const attributesFileInput = document.getElementById('attributes-file');
+const helpTokenBtn = document.getElementById('help-token');
 
-// Initialize
-async function init() {
-  attributeKeys = await loadAttributes();
-  const config = await autoLoadConfig();
-  if (config) {
-    endpointInput.value = config.endpoint;
-    tokenInput.value = config.token;
-  }
-}
+let logLines = [];
+let ingestInterval = null;
+let currentLineIndex = 0;
+let loopEnabled = false;
+let randomizeEnabled = false;
+let selectedAttributes = loadAttributes();
+let attributeKeys = [];
+let activeWorkerId = null;
 
-init();
 
-// Event Listeners
-helpTokenBtn.addEventListener('click', () => {
-  alert(`To create a Dynatrace API token:\n\n1. Log into your Dynatrace tenant\n2. Go to Access Tokens\n3. Click 'Generate new token'\n4. Add scope: logs.ingest\n5. Copy the token and paste it here`);
-});
+fetch('./attributes.json')
+  .then(res => res.json())
+  .then(data => { if (Array.isArray(data)) attributeKeys = data; })
+  .catch(err => console.warn("Could not load attributes.json", err));
 
-injectAttributesBtn.addEventListener('click', () => {
-  attributeSection.classList.toggle('hidden');
-});
+updateAttributeList(attributeList, selectedAttributes);
+updateLabels(randomizeEnabled);
 
-saveConfigBtn.addEventListener('click', () => {
-  saveConfig(endpointInput.value, tokenInput.value);
-});
-
-loadConfigBtn.addEventListener('click', () => {
-  configFileInput.click();
-});
-
-configFileInput.addEventListener('change', async (event) => {
-  const file = event.target.files[0];
-  if (file) {
-    const config = await loadConfig(file);
-    if (config) {
-      endpointInput.value = config.endpoint;
-      tokenInput.value = config.token;
-    }
-  }
-});
-
-readFromFileBtn.addEventListener('click', () => {
-  attributesFileInput.click();
-});
-
-attributesFileInput.addEventListener('change', async (event) => {
-  const file = event.target.files[0];
-  if (file) {
-    const attributes = await loadAttributesFromFile(file);
-    selectedAttributes.clear();
-    Object.entries(attributes).forEach(([key, value]) => {
-      selectedAttributes.set(key, value);
-    });
-    updateAttributeList(attributeList, selectedAttributes);
-  }
-});
-
-saveToFileBtn.addEventListener('click', () => {
-  saveAttributes(selectedAttributes);
-});
-
-endpointInput.addEventListener('blur', () => {
-  endpointInput.value = processEndpointUrl(endpointInput.value).split('/api/v2/logs/ingest')[0];
-});
-
-randomizeBtn.addEventListener('click', () => {
-  randomizeEnabled = !randomizeEnabled;
-  randomizeBtn.classList.toggle('bg-green-100');
-  updateLabels(randomizeEnabled);
-  logStatus(randomizeEnabled ? '🎲 Randomization enabled' : '🎲 Randomization disabled');
-});
-
-// Make functions available to window for HTML event handlers
 window.updateAttributeValue = (key, value) => {
   selectedAttributes.set(key, value);
+  updateAttributeList(attributeList, selectedAttributes);
+  saveAttributes(selectedAttributes);
 };
 
 window.removeAttribute = (key) => {
   selectedAttributes.delete(key);
   updateAttributeList(attributeList, selectedAttributes);
+  saveAttributes(selectedAttributes);
 };
 
-function getRandomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+const logStatus = (msg) => {
+  const now = new Date().toLocaleTimeString();
+  statusLog.textContent += `[${now}] ${msg}\n`;
+  statusLog.scrollTop = statusLog.scrollHeight;
+};
 
-attributeSearch.addEventListener('input', (e) => {
-  const results = attributeKeys.filter(key => 
-    key.toLowerCase().includes(e.target.value.toLowerCase())
-  );
+const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+attributeSearch?.addEventListener('input', (e) => {
   const dropdown = document.getElementById('attribute-dropdown');
+  const value = e.target.value.toLowerCase();
+  const results = attributeKeys.filter(key => key.toLowerCase().includes(value)).slice(0, 8);
   dropdown.innerHTML = '';
-  results.slice(0, 5).forEach(key => {
-    const option = document.createElement('div');
-    option.className = 'p-2 hover:bg-gray-100 cursor-pointer';
-    option.textContent = key;
-    option.onclick = () => {
+  results.forEach(key => {
+    const div = document.createElement('div');
+    div.className = 'p-2 hover:bg-gray-100 cursor-pointer';
+    div.textContent = key;
+    div.onclick = () => {
       selectedAttributes.set(key, '');
       updateAttributeList(attributeList, selectedAttributes);
       dropdown.innerHTML = '';
       attributeSearch.value = '';
     };
-    dropdown.appendChild(option);
+    dropdown.appendChild(div);
   });
   dropdown.style.display = results.length ? 'block' : 'none';
 });
 
-function processXMLContent(content) {
-  try {
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(content, "text/xml");
-    const serializer = new XMLSerializer();
-    return Array.from(xmlDoc.documentElement.children).map(node => 
-      serializer.serializeToString(node)
-    );
-  } catch (error) {
-    logStatus(`⚠ XML parsing error: ${error.message}`);
-    return content.split(/\r?\n/).filter(line => line.trim().length > 0);
+injectAttributesBtn?.addEventListener('click', () => attributeSection?.classList.toggle('hidden'));
+saveToFileBtn?.addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(Object.fromEntries(selectedAttributes), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'attributes.json';
+  a.click();
+});
+readFromFileBtn?.addEventListener('click', () => attributesFileInput?.click());
+attributesFileInput?.addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    const attrs = await loadAttributesFromFile(file);
+    selectedAttributes = attrs;
+    updateAttributeList(attributeList, selectedAttributes);
+    saveAttributes(selectedAttributes);
   }
-}
-
-function processJSONContent(content) {
-  try {
-    const jsonData = JSON.parse(content);
-    if (Array.isArray(jsonData)) {
-      return jsonData.map(item => JSON.stringify(item));
-    } else {
-      return [JSON.stringify(jsonData)];
-    }
-  } catch (error) {
-    logStatus(`⚠ JSON parsing error: ${error.message}`);
-    return content.split(/\r?\n/).filter(line => line.trim().length > 0);
-  }
-}
-
-fileInput.addEventListener('change', () => {
-  const file = fileInput.files[0];
-  if (!file) {
-    fileStatus.textContent = 'No file selected.';
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const content = e.target.result;
-    
-    if (file.name.endsWith('.xml')) {
-      logLines = processXMLContent(content);
-    } else if (file.name.endsWith('.json')) {
-      logLines = processJSONContent(content);
-    } else {
-      logLines = content.split(/\r?\n/).filter(line => line.trim().length > 0);
-    }
-    
-    fileStatus.textContent = `${logLines.length} log lines ready for ingestion`;
-    fileStatus.className = 'text-lg font-bold text-dynatrace-primary';
-  };
-  reader.readAsText(file);
 });
 
-async function testConnection(endpoint, token) {
-  try {
-    const processedEndpoint = processEndpointUrl(endpoint);
-    const response = await fetch(processedEndpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Api-Token ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ content: 'Connection test' })
-    });
-
-    connectionStatus.className = response.ok 
-      ? 'connection-success rounded-md p-4 mb-4' 
-      : 'connection-error rounded-md p-4 mb-4';
-
-    connectionStatus.textContent = response.ok
-      ? '✓ Connection successful! Ready to ingest logs.'
-      : `⚠ Connection failed: ${response.status} ${response.statusText}`;
-
-    connectionStatus.style.display = 'block';
-    return response.ok;
-  } catch (error) {
-    connectionStatus.className = 'connection-error rounded-md p-4 mb-4';
-    connectionStatus.textContent = `⚠ Connection error: ${error.message}`;
-    connectionStatus.style.display = 'block';
-    return false;
+saveConfigBtn?.addEventListener('click', () => {
+  const config = { endpoint: endpointInput.value.trim(), token: tokenInput.value.trim() };
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'config.json';
+  a.click();
+});
+loadConfigBtn?.addEventListener('click', () => configFileInput?.click());
+configFileInput?.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const config = JSON.parse(e.target.result);
+        endpointInput.value = config.endpoint || '';
+        tokenInput.value = config.token || '';
+      } catch {
+        alert('Invalid config file');
+      }
+    };
+    reader.readAsText(file);
   }
-}
+});
 
-function logStatus(msg) {
-  const now = new Date().toLocaleTimeString();
-  statusLog.textContent += `[${now}] ${msg}\n`;
-  statusLog.scrollTop = statusLog.scrollHeight;
-}
+helpTokenBtn?.addEventListener('click', () => {
+  alert(`To create a Dynatrace API token:\n\n1. Log into your Dynatrace tenant\n2. Go to Access Tokens\n3. Click \"Generate new token\"\n4. Add scope: logs.ingest\n5. Copy the token and paste it here`);
+});
 
-startBtn.addEventListener('click', async () => {
-  const endpoint = endpointInput.value.trim();
+fileInput?.addEventListener('change', function () {
+  const file = fileInput.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      logLines = e.target.result.split(/\r?\n/).filter(line => line.trim() !== '');
+      fileStatus.textContent = `${logLines.length} log lines loaded.`;
+    };
+    reader.readAsText(file);
+  }
+});
+
+startBtn?.addEventListener('click', async () => {
+  const endpoint = processEndpointUrl(endpointInput.value.trim());
   const token = tokenInput.value.trim();
-  const baseDelay = parseInt(delayInput.value.trim(), 10);
-  const baseVolume = parseInt(lineVolumeInput.value.trim(), 10);
-
-  if (!endpoint || !token || !baseDelay || logLines.length === 0) {
+  const baseDelay = parseInt(delayInput.value.trim(), 10) || 1000;
+  const baseVolume = parseInt(lineVolumeInput.value.trim(), 10) || 1;
+  if (!endpoint || !token || logLines.length === 0) {
     alert('Please fill all fields and upload a log file.');
     return;
   }
 
-  const isConnected = await testConnection(endpoint, token);
-  if (!isConnected) {
-    return;
+  const modeBtn = document.querySelector('.btn-secondary.active') || document.getElementById('mode-sequential');
+  const mode = modeBtn?.id?.replace('mode-', '') || 'sequential';
+  const options = {
+    mode,
+    currentLineIndex,
+    logLines,
+    historicTimestamp: document.getElementById('historic-timestamp')?.value,
+    scatteredStart: document.getElementById('scattered-start')?.value,
+    scatteredEnd: document.getElementById('scattered-end')?.value,
+    scatteredChunks: parseInt(document.getElementById('scattered-chunks')?.value, 10)
+  };
+
+  if (mode === 'scattered' && !randomizeEnabled) {
+    randomizeEnabled = true;
+    randomizeBtn.classList.add('bg-green-100');
+    updateLabels(true);
+    logStatus('🎲 Randomization auto-enabled for Scattered mode');
   }
 
-  const processedEndpoint = processEndpointUrl(endpoint);
   currentLineIndex = 0;
   startBtn.disabled = true;
   stopBtn.disabled = false;
@@ -272,35 +199,147 @@ startBtn.addEventListener('click', async () => {
 
     const delay = randomizeEnabled ? getRandomInt(0, baseDelay) : baseDelay;
     const volume = randomizeEnabled ? getRandomInt(1, baseVolume) : baseVolume;
-    
     const batchLines = logLines.slice(currentLineIndex, currentLineIndex + volume);
+    options.currentLineIndex = currentLineIndex;
+
+    const success = await sendLogBatch(endpoint, token, batchLines, selectedAttributes, options);
     currentLineIndex += volume;
-    
-    const success = await sendLogBatch(processedEndpoint, token, batchLines, selectedAttributes);
-    if (success) {
-      logStatus(`✓ Sent batch of ${batchLines.length} lines`);
-    } else {
-      logStatus(`⚠ Error sending batch`);
-    }
-    
-    if (randomizeEnabled) {
-      logStatus(`ℹ Using random delay: ${delay}ms, volume: ${volume}`);
-    }
+
+    logStatus(success ? `✓ Sent batch of ${batchLines.length} lines` : `⚠ Error sending batch`);
+    if (randomizeEnabled) logStatus(`ℹ Delay: ${delay}ms, volume: ${volume}`);
   }, baseDelay);
 });
 
-stopBtn.addEventListener('click', () => {
+stopBtn?.addEventListener('click', () => {
   clearInterval(ingestInterval);
   startBtn.disabled = false;
   stopBtn.disabled = true;
   loopBtn.disabled = true;
   loopEnabled = false;
-  loopBtn.classList.remove('bg-green-100');
   logStatus('⏹ Ingestion stopped by user.');
 });
 
-loopBtn.addEventListener('click', () => {
+loopBtn?.addEventListener('click', () => {
   loopEnabled = !loopEnabled;
-  loopBtn.classList.toggle('bg-green-100');
+  loopBtn.classList.toggle('bg-green-100', loopEnabled);
   logStatus(loopEnabled ? '↻ Loop mode enabled' : '↻ Loop mode disabled');
 });
+
+randomizeBtn?.addEventListener('click', () => {
+  randomizeEnabled = !randomizeEnabled;
+  randomizeBtn.classList.toggle('bg-green-100', randomizeEnabled);
+  updateLabels(randomizeEnabled);
+  logStatus(randomizeEnabled ? '🎲 Randomization enabled' : '🎲 Randomization disabled');
+});
+
+['mode-sequential', 'mode-historic', 'mode-scattered'].forEach(id => {
+  document.getElementById(id)?.addEventListener('click', () => {
+    document.querySelectorAll('#mode-descriptions > div').forEach(div => div.classList.add('hidden'));
+    document.querySelector(`#${id.replace('mode-', '')}-desc`)?.classList.remove('hidden');
+    document.querySelectorAll('.btn-secondary[id^="mode-"]').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(id)?.classList.add('active');
+
+    if (id === 'mode-historic') {
+      const input = document.getElementById('historic-timestamp');
+      const now = new Date();
+      now.setSeconds(0);
+      now.setMilliseconds(0);
+      input.value = now.toISOString().slice(0, 16);
+    }
+
+    if (id === 'mode-scattered') {
+      const start = document.getElementById('scattered-start');
+      const end = document.getElementById('scattered-end');
+      const now = new Date();
+      const later = new Date(now.getTime() + 3600000);
+      start.value = now.toISOString().slice(0, 16);
+      end.value = later.toISOString().slice(0, 16);
+
+      if (!randomizeEnabled) {
+        randomizeEnabled = true;
+        randomizeBtn.classList.add('bg-green-100');
+        updateLabels(true);
+        logStatus('🎲 Randomization auto-enabled for Scattered mode');
+      }
+    }
+  });
+});
+
+const stepIds = ['step-settings', 'step-upload', 'step-replay-config', 'step-replay'];
+stepIds.forEach((id, idx) => {
+  const step = document.getElementById(id);
+  const nextBtn = step?.querySelector('.next-step');
+  const toggleSpan = step?.querySelector('.toggle-section span');
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      step.querySelector('.section-content').classList.add('hidden');
+      toggleSpan.textContent = '►';
+      const nextStep = document.getElementById(stepIds[idx + 1]);
+      if (nextStep) {
+        nextStep.querySelector('.section-content').classList.remove('hidden');
+        nextStep.querySelector('.toggle-section span').textContent = '▼';
+      }
+    });
+  }
+});
+
+document.querySelectorAll('.toggle-section').forEach(toggleBtn => {
+  toggleBtn.addEventListener('click', () => {
+    const section = toggleBtn.closest('section');
+    const content = section.querySelector('.section-content');
+    const icon = toggleBtn.querySelector('span');
+    const isHidden = content.classList.contains('hidden');
+    content.classList.toggle('hidden');
+    icon.textContent = isHidden ? '▼' : '►';
+  });
+});
+
+const workerManager = new WorkerManager();
+const workersList = document.getElementById('workersList');
+workerManager.onUpdate = () => {
+  workersList.innerHTML = '';
+  for (const w of workerManager.getWorkers()) {
+    const row = document.createElement('div');
+    row.className = `worker-row flex items-center justify-between my-2 p-2 rounded cursor-pointer ${
+      w.id === activeWorkerId ? 'bg-dynatrace-primary text-white' : 'hover:bg-gray-100'
+    }`;
+    row.innerHTML = `
+      <span>${w.name}</span>
+      <div class="flex items-center space-x-2">
+        <button class="rename-btn text-sm ${w.id === activeWorkerId ? 'text-white' : 'text-blue-600'}">✎</button>
+        <button class="kill-btn text-sm ${w.id === activeWorkerId ? 'text-white' : 'text-red-600'}">✖</button>
+      </div>
+    `;
+
+    // Clicking the row sets it active
+    row.addEventListener('click', () => {
+      activeWorkerId = w.id;
+      workerManager.onUpdate(); // re-render UI
+      logStatus(`🔀 Switched to worker: ${w.name}`);
+    });
+
+    row.querySelector('.rename-btn').onclick = (e) => {
+      e.stopPropagation();
+      const newName = prompt('Rename worker:', w.name);
+      if (newName) workerManager.renameWorker(w.id, newName);
+    };
+
+    row.querySelector('.kill-btn').onclick = (e) => {
+      e.stopPropagation();
+      if (confirm(`Kill worker "${w.name}"?`)) {
+        if (w.id === activeWorkerId) activeWorkerId = null;
+        workerManager.killWorker(w.id);
+      }
+    };
+
+    workersList.appendChild(row);
+  }
+};
+
+document.getElementById('addWorker')?.addEventListener('click', () => {
+  const name = prompt("New Worker Name:");
+  const newWorker = workerManager.addWorker(name || undefined);
+  activeWorkerId = newWorker.id;
+  workerManager.onUpdate();
+});
+

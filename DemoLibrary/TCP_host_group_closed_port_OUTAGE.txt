@@ -1,0 +1,35 @@
+[INFO]  network-monitor: Starting packet capture on interface eth0
+[INFO]  kernel: netfilter: NF_NETDEV_UP:  Bringing up network interface eth0
+[INFO]  snort[1024]: Snort initialized in IDS mode (inline=false), monitoring TCP traffic
+[INFO]  snort[1024]: Loaded ruleset “community.rules”
+[INFO]  snort[1024]: Applying rule “SYN flood detection” threshold=100 pkts/sec per source
+[INFO]  conntrack: new conntrack entry: src=10.0.1.23 dst=100.27.205.127 dport=80 proto=TCP
+[INFO]  conntrack: new conntrack entry: src=10.0.1.24 dst=100.27.205.127 dport=80 proto=TCP
+[INFO]  conntrack: new conntrack entry: src=10.0.1.25 dst=100.27.205.127 dport=80 proto=TCP
+…
+[WARN]  conntrack: possible half-open connection detected: src=10.0.1.23 dst=100.27.205.127 dport=80
+[WARN]  snort[1024]: Excessive half-open connections from 10.0.1.23 (75 in last 10s)
+[WARN]  snort[1024]: Excessive half-open connections from 10.0.1.24 (80 in last 10s)
+[WARN]  snort[1024]: Excessive half-open connections from 10.0.1.25 (110 in last 10s)
+[CRITICAL] IDS: TCP SYN flood detected against host 100.27.205.127 port 80 — 110 SYNs/sec from 10.0.1.25
+[INFO]  firewall-daemon: Generating blocking rule for src=10.0.1.25 proto=TCP dport=80
+[INFO]  firewall-daemon: Inserting iptables rule: -A INPUT -s 10.0.1.25 -p tcp --dport 80 -j DROP
+[INFO]  firewall-daemon: Closing TCP port 80 listener per IDS protection rules
+[INFO]  application-web: Gracefully shutting down HTTP listener on port 80
+[WARN]  application-web: Active HTTP sessions terminated prematurely (10 sessions)
+[INFO]  firewall-daemon: Applying new rule set — total rules now: 27
+[INFO]  network-monitor: Verifying connectivity to port 80 on 100.27.205.127 — result: closed
+[INFO]  monitoring-agent: Port check failed for TCP/80 on 100.27.205.127
+[WARN]  monitoring-agent: Switching host 100.27.205.127 into degraded mode for web-service
+[INFO]  admin-notify: Sending alert to on-call rotation via PagerDuty
+[INFO]  admin-notify: SMS sent to +43-660-123456
+[INFO]  snort[1024]: Continuing to monitor other services
+[INFO]  conntrack: Cleaning up stale entries older than 300s
+…
+[INFO]  scheduled-task: Re-evaluating firewall rules at next interval (in 5m)
+[INFO]  maintenance-script: Testing HTTP port re-open after rule expiration
+[INFO]  firewall-daemon: Removing iptables rule: -D INPUT -s 10.0.1.25 -p tcp --dport 80 -j DROP
+[INFO]  application-web: Restarting HTTP listener on port 80
+[INFO]  application-web: HTTP listener started successfully on port 80
+[INFO]  network-monitor: Port 80 on 100.27.205.127 is now open
+[INFO]  snort[1024]: Resuming SYN flood threshold monitoring for port 80
