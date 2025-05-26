@@ -22,10 +22,9 @@ export const getCurrentTimestamp = (mode, currentLineIndex, logLines, options = 
       const startTime = new Date(options.historicTimestamp || now);
       if (isNaN(startTime.getTime())) return now.toISOString();
       
-      // Calculate time progression based on line index and delay
-      const delay = options.delay || 1000;
-      const progressMs = (currentLineIndex * delay);
-      const timestamp = new Date(startTime.getTime() + progressMs);
+      // For historic mode, just add milliseconds based on line index
+      const msPerLine = 10; // Process logs very quickly
+      const timestamp = new Date(startTime.getTime() + (currentLineIndex * msPerLine));
       return timestamp.toISOString();
     }
 
@@ -89,7 +88,7 @@ export const sendLogBatch = async (endpoint, token, lines, selectedAttributes, o
   
   // Build payloads, filtering out nulls from empty lines and sleep commands
   const payloads = lines
-    .map(line => {
+    .map((line, index) => {
       // Check for sleep command
       const sleepMatch = line.trim().match(/^\[\[\[SLEEP\s+(\d+)\]\]\]$/);
       if (sleepMatch) {
@@ -99,18 +98,22 @@ export const sendLogBatch = async (endpoint, token, lines, selectedAttributes, o
       return buildPayload(
         line,
         selectedAttributes,
-        getCurrentTimestamp(mode, options.currentLineIndex, options.logLines, options)
+        getCurrentTimestamp(mode, options.currentLineIndex + index, options.logLines, options)
       );
     })
     .filter(p => p !== null);
 
   if (payloads.length === 0) return true;
 
-  // For non-sequential modes, we need to respect rate limits but don't need UI delays
+  // For non-sequential modes, process in batches respecting rate limits
   if (mode !== 'sequential') {
     const batchSize = RATE_LIMIT_PER_SECOND;
     for (let i = 0; i < payloads.length; i += batchSize) {
       const batch = payloads.slice(i, i + batchSize);
+      const validBatch = batch.filter(p => !p.sleep);
+      
+      if (validBatch.length === 0) continue;
+
       try {
         const response = await fetch(endpoint, {
           method: 'POST',
@@ -118,7 +121,7 @@ export const sendLogBatch = async (endpoint, token, lines, selectedAttributes, o
             'Authorization': `Api-Token ${token}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(batch.filter(p => !p.sleep))
+          body: JSON.stringify(validBatch)
         });
 
         if (!response.ok) {
@@ -126,8 +129,10 @@ export const sendLogBatch = async (endpoint, token, lines, selectedAttributes, o
           return false;
         }
 
-        // Add a small delay between batches to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 1100)); // Slightly over 1 second
+        // Minimal delay between batches to respect rate limits
+        if (i + batchSize < payloads.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
       } catch (error) {
         console.error('[Log Ingest] Network Error:', error);
         return false;
@@ -136,7 +141,7 @@ export const sendLogBatch = async (endpoint, token, lines, selectedAttributes, o
     return true;
   }
 
-  // For sequential mode, we process one by one with UI feedback
+  // For sequential mode, process one by one with UI feedback
   for (const payload of payloads) {
     if (payload.sleep) {
       await new Promise(resolve => setTimeout(resolve, payload.sleep));
@@ -156,11 +161,6 @@ export const sendLogBatch = async (endpoint, token, lines, selectedAttributes, o
       if (!response.ok) {
         console.error('Failed to send log:', response.status, response.statusText);
         return false;
-      }
-
-      // For sequential mode, we respect the configured delay
-      if (options.delay) {
-        await new Promise(resolve => setTimeout(resolve, options.delay));
       }
     } catch (error) {
       console.error('[Log Ingest] Network Error:', error);
