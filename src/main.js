@@ -37,7 +37,6 @@ let selectedAttributes = loadAttributes();
 let attributeKeys = [];
 let activeWorkerId = null;
 
-
 fetch('./attributes.json')
   .then(res => res.json())
   .then(data => { if (Array.isArray(data)) attributeKeys = data; })
@@ -132,7 +131,7 @@ configFileInput?.addEventListener('change', (e) => {
 });
 
 helpTokenBtn?.addEventListener('click', () => {
-  alert(`To create a Dynatrace API token:\n\n1. Log into your Dynatrace tenant\n2. Go to Access Tokens\n3. Click \"Generate new token\"\n4. Add scope: logs.ingest\n5. Copy the token and paste it here`);
+  alert(`To create a Dynatrace API token:\n\n1. Log into your Dynatrace tenant\n2. Go to Access Tokens\n3. Click "Generate new token"\n4. Add scope: logs.ingest\n5. Copy the token and paste it here`);
 });
 
 fileInput?.addEventListener('change', function () {
@@ -152,6 +151,7 @@ startBtn?.addEventListener('click', async () => {
   const token = tokenInput.value.trim();
   const baseDelay = parseInt(delayInput.value.trim(), 10) || 1000;
   const baseVolume = parseInt(lineVolumeInput.value.trim(), 10) || 1;
+  
   if (!endpoint || !token || logLines.length === 0) {
     alert('Please fill all fields and upload a log file.');
     return;
@@ -159,8 +159,14 @@ startBtn?.addEventListener('click', async () => {
 
   const modeBtn = document.querySelector('.btn-secondary.active') || document.getElementById('mode-sequential');
   const mode = modeBtn?.id?.replace('mode-', '') || 'sequential';
+  
+  // Add initial log message
+  logStatus('Logstreamity worker start.');
+
   const options = {
     mode,
+    delay: baseDelay,
+    lineVolume: baseVolume,
     currentLineIndex,
     logLines,
     historicTimestamp: document.getElementById('historic-timestamp')?.value,
@@ -176,38 +182,57 @@ startBtn?.addEventListener('click', async () => {
     logStatus('🎲 Randomization auto-enabled for Scattered mode');
   }
 
-  currentLineIndex = 0;
   startBtn.disabled = true;
   stopBtn.disabled = false;
   loopBtn.disabled = false;
-  statusLog.textContent = '';
+  currentLineIndex = 0;
 
-  ingestInterval = setInterval(async () => {
-    if (currentLineIndex >= logLines.length) {
-      if (loopEnabled) {
-        currentLineIndex = 0;
-        logStatus('↻ Restarting log ingestion from beginning');
-      } else {
-        clearInterval(ingestInterval);
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
-        loopBtn.disabled = true;
-        logStatus('✓ Ingestion completed successfully');
-        return;
+  if (mode === 'sequential') {
+    // For sequential mode, we use intervals for UI feedback
+    ingestInterval = setInterval(async () => {
+      if (currentLineIndex >= logLines.length) {
+        if (loopEnabled) {
+          currentLineIndex = 0;
+          logStatus('↻ Restarting log ingestion from beginning');
+        } else {
+          clearInterval(ingestInterval);
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+          loopBtn.disabled = true;
+          logStatus('✓ Ingestion completed successfully');
+          return;
+        }
       }
+
+      const delay = randomizeEnabled ? getRandomInt(0, baseDelay) : baseDelay;
+      const volume = randomizeEnabled ? getRandomInt(1, baseVolume) : baseVolume;
+      const batchLines = logLines.slice(currentLineIndex, currentLineIndex + volume);
+      options.currentLineIndex = currentLineIndex;
+
+      const success = await sendLogBatch(endpoint, token, batchLines, selectedAttributes, options);
+      currentLineIndex += volume;
+
+      logStatus(success ? `✓ Sent batch of ${batchLines.length} lines` : `⚠ Error sending batch`);
+      if (randomizeEnabled) logStatus(`ℹ Delay: ${delay}ms, volume: ${volume}`);
+    }, baseDelay);
+  } else {
+    // For historic and scattered modes, process all at once
+    try {
+      const success = await sendLogBatch(endpoint, token, logLines, selectedAttributes, options);
+      logStatus(success ? 
+        `✓ Processed all ${logLines.length} lines with ${mode} mode` : 
+        `⚠ Error processing logs in ${mode} mode`
+      );
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      loopBtn.disabled = true;
+    } catch (error) {
+      logStatus(`⚠ Error: ${error.message}`);
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      loopBtn.disabled = true;
     }
-
-    const delay = randomizeEnabled ? getRandomInt(0, baseDelay) : baseDelay;
-    const volume = randomizeEnabled ? getRandomInt(1, baseVolume) : baseVolume;
-    const batchLines = logLines.slice(currentLineIndex, currentLineIndex + volume);
-    options.currentLineIndex = currentLineIndex;
-
-    const success = await sendLogBatch(endpoint, token, batchLines, selectedAttributes, options);
-    currentLineIndex += volume;
-
-    logStatus(success ? `✓ Sent batch of ${batchLines.length} lines` : `⚠ Error sending batch`);
-    if (randomizeEnabled) logStatus(`ℹ Delay: ${delay}ms, volume: ${volume}`);
-  }, baseDelay);
+  }
 });
 
 stopBtn?.addEventListener('click', () => {
@@ -311,10 +336,9 @@ workerManager.onUpdate = () => {
       </div>
     `;
 
-    // Clicking the row sets it active
     row.addEventListener('click', () => {
       activeWorkerId = w.id;
-      workerManager.onUpdate(); // re-render UI
+      workerManager.onUpdate();
       logStatus(`🔀 Switched to worker: ${w.name}`);
     });
 
@@ -342,4 +366,3 @@ document.getElementById('addWorker')?.addEventListener('click', () => {
   activeWorkerId = newWorker.id;
   workerManager.onUpdate();
 });
-
