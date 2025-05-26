@@ -14,6 +14,8 @@ export const processEndpointUrl = (url) => {
 
 const RATE_LIMIT_PER_SECOND = 90; // Keep safely below 100 events/sec limit
 
+const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
 export const getCurrentTimestamp = (mode, currentLineIndex, logLines, options = {}) => {
   const now = new Date();
   
@@ -35,14 +37,37 @@ export const getCurrentTimestamp = (mode, currentLineIndex, logLines, options = 
 
       const totalDuration = end.getTime() - start.getTime();
       const chunks = options.scatteredChunks || 10;
-      const chunkSize = Math.ceil(logLines.length / chunks);
-      const currentChunk = Math.floor(currentLineIndex / chunkSize);
-      const chunkProgress = (currentLineIndex % chunkSize) / chunkSize;
       
-      // Calculate time for current chunk
+      // Instead of evenly distributing logs, create random-sized chunks
+      const chunkBoundaries = Array(chunks + 1).fill(0);
+      chunkBoundaries[0] = 0;
+      chunkBoundaries[chunks] = logLines.length;
+      
+      // Generate random chunk sizes that sum to total log lines
+      for (let i = 1; i < chunks; i++) {
+        const remainingChunks = chunks - i;
+        const remainingLines = logLines.length - chunkBoundaries[i - 1];
+        const maxForChunk = Math.floor(remainingLines / remainingChunks * 2); // Allow up to 2x average size
+        chunkBoundaries[i] = chunkBoundaries[i - 1] + getRandomInt(1, maxForChunk);
+      }
+      
+      // Find which chunk this line belongs to
+      let currentChunk = 0;
+      while (currentChunk < chunks && currentLineIndex >= chunkBoundaries[currentChunk + 1]) {
+        currentChunk++;
+      }
+      
+      // Calculate progress within chunk with some random variation
+      const chunkStart = chunkBoundaries[currentChunk];
+      const chunkEnd = chunkBoundaries[currentChunk + 1];
+      const chunkProgress = (currentLineIndex - chunkStart) / (chunkEnd - chunkStart);
+      
+      // Add some random jitter to the timestamp within the chunk
       const chunkStartTime = start.getTime() + (totalDuration * (currentChunk / chunks));
       const chunkDuration = totalDuration / chunks;
-      const timestamp = new Date(chunkStartTime + (chunkDuration * chunkProgress));
+      const jitter = getRandomInt(-Math.floor(chunkDuration * 0.1), Math.floor(chunkDuration * 0.1));
+      const timestamp = new Date(chunkStartTime + (chunkDuration * chunkProgress) + jitter);
+      
       return timestamp.toISOString();
     }
 
