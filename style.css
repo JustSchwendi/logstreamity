@@ -1,3 +1,13 @@
+
+:root{
+  --bg:#ffffff; --fg:#111827; --muted:#6b7280; --accent:#6f2dbd; --panel:#f9fafb; --border:#e5e7eb;
+}
+[data-theme="dark"]{
+  --bg:#0b0f1a; --fg:#e5e7eb; --muted:#9ca3af; --accent:#8a4bff; --panel:#0f1524; --border:#1f2937;
+}
+body{ background:var(--bg); color:var(--fg); }
+.btn{ background:var(--accent); color:#fff; }
+input, select, .border{ border-color:var(--border); }
 /* style.css — Modern Dynatrace theme */
 @import url('https://dt-cdn.net/fonts/BerninaSans/BerninaSans-Web-Regular-20190314.woff2');
 @import url('https://dt-cdn.net/fonts/BerninaSans/BerninaSans-Web-Bold-20190314.woff2');

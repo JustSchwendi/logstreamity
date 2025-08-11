@@ -1,5 +1,76 @@
 // src/main.js
 
+async function startWorkersPool(logLines, endpoint, token, uiOptions, workerManager){
+  // Build workers list: if workerManager has entries use them, else default one
+  const workers = workerManager && workerManager.getWorkers && workerManager.getWorkers().length
+    ? workerManager.getWorkers()
+    : [{ id: 0, name: 'logstreamity', mode: uiOptions.mode, delayMs: uiOptions.delay, batchSize: uiOptions.volume, randomize: uiOptions.randomize, attributes: uiOptions.attributes }];
+
+  let running = 0, errors = 0;
+  const dot = document.getElementById('status-dot');
+  function setBusy(){ if(dot){ dot.classList.remove('status-ready','status-error'); dot.classList.add('status-busy'); } }
+  function setReady(){ if(dot){ dot.classList.remove('status-busy','status-error'); dot.classList.add('status-ready'); } }
+  function setError(){ if(dot){ dot.classList.remove('status-busy','status-ready'); dot.classList.add('status-error'); } }
+
+  setBusy();
+  const startOne = async (wCfg) => {
+    return new Promise((resolve) => {
+      const w = new Worker('src/webhook-worker.js');
+      w.onmessage = (ev) => {
+        const d = ev.data;
+        if (d.type === 'PROGRESS') {
+          logStatus(`↗ ${wCfg.name}: ${d.progress}%`);
+        } else if (d.type === 'DONE') {
+          logStatus(`✓ ${wCfg.name}: done`);
+          w.terminate();
+          running--;
+          if (running === 0) { if(errors) setError(); else setReady(); }
+          resolve(true);
+        } else if (d.type === 'ERROR') {
+          logStatus(`⚠ ${wCfg.name}: ${d.error}`);
+          w.terminate();
+          errors++; running--;
+          if (running === 0) setError();
+          resolve(false);
+        }
+      };
+      const options = {
+        endpoint, token,
+        mode: wCfg.mode || uiOptions.mode,
+        delayMs: Number(wCfg.delayMs ?? uiOptions.delay),
+        batchSize: Number(wCfg.batchSize ?? uiOptions.volume),
+        randomize: !!(wCfg.randomize ?? uiOptions.randomize),
+        attributes: wCfg.attributes || uiOptions.attributes,
+        rateLimitPerSecond: 90
+      };
+      running++;
+      w.postMessage({ type: 'START_INGEST', config: options, lines: logLines, workerInfo: { id: wCfg.id, name: wCfg.name || 'logstreamity' } });
+    });
+  };
+
+  for (const w of workers) await startOne(w);
+  return errors === 0;
+}
+
+
+async function tryLoadJSON(path){
+  try{
+    const res = await fetch(path + '?_=' + Date.now(), {cache:'no-store'});
+    if(!res.ok) return null;
+    return await res.json();
+  }catch{ return null; }
+}
+
+function setStatus(state){
+  const dot = document.getElementById('status-dot');
+  if(!dot) return;
+  dot.classList.remove('status-ready','status-busy','status-error');
+  if(state==='ready') dot.classList.add('status-ready');
+  else if(state==='busy') dot.classList.add('status-busy');
+  else if(state==='error') dot.classList.add('status-error');
+}
+
+
 import { updateLabels, updateAttributeList, showAttributeDropdown } from './ui.js';
 import { loadAttributes, saveAttributes, loadAttributesFromFile } from './attributes.js';
 import { processEndpointUrl, sendLogBatch } from './ingest.js';
@@ -164,6 +235,7 @@ startBtn?.addEventListener('click', async () => {
   logStatus('Logstreamity worker start.');
 
   const options = {
+    rateLimitPerSecond: 90,
     mode,
     delay: baseDelay,
     lineVolume: baseVolume,
@@ -187,41 +259,20 @@ startBtn?.addEventListener('click', async () => {
   loopBtn.disabled = false;
   currentLineIndex = 0;
 
-  if (mode === 'sequential') {
-    // For sequential mode, we use intervals for UI feedback
-    ingestInterval = setInterval(async () => {
-      if (currentLineIndex >= logLines.length) {
-        if (loopEnabled) {
-          currentLineIndex = 0;
-          logStatus('↻ Restarting log ingestion from beginning');
-        } else {
-          clearInterval(ingestInterval);
-          startBtn.disabled = false;
-          stopBtn.disabled = true;
-          loopBtn.disabled = true;
-          logStatus('✓ Ingestion completed successfully');
-          return;
-        }
-      }
-
-      const delay = randomizeEnabled ? getRandomInt(0, baseDelay) : baseDelay;
-      const volume = randomizeEnabled ? getRandomInt(1, baseVolume) : baseVolume;
-      const batchLines = logLines.slice(currentLineIndex, currentLineIndex + volume);
-      options.currentLineIndex = currentLineIndex;
-
-      const success = await sendLogBatch(endpoint, token, batchLines, selectedAttributes, options);
-      currentLineIndex += volume;
-
-      logStatus(success ? `✓ Sent batch of ${batchLines.length} lines` : `⚠ Error sending batch`);
-      if (randomizeEnabled) logStatus(`ℹ Delay: ${delay}ms, volume: ${volume}`);
-    }, baseDelay);
+  
+if (true) { // use worker pool for all modes
+    const ok = await startWorkersPool(logLines, endpoint, token, { mode, delay: baseDelay, volume: baseVolume, randomize: randomizeEnabled, attributes: Object.fromEntries(selectedAttributes) }, workerManager);
+    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true; return;
   } else {
     // For historic and scattered modes, process all at once
+    // Timestamp scheduling: use baseDelay per event to simulate gaps in time
+    options.timestampStrategy = 'scheduled';
+    options.timestampStepMs = baseDelay;
     try {
-      const success = await sendLogBatch(endpoint, token, logLines, selectedAttributes, options);
-      logStatus(success ? 
+      const result = await sendLogBatch(endpoint, token, logLines, selectedAttributes, options);
+      logStatus(result?.success ? 
         `✓ Processed all ${logLines.length} lines with ${mode} mode` : 
-        `⚠ Error processing logs in ${mode} mode`
+        `⚠ Error processing logs in ${mode} mode${result?.status ? ` (HTTP ${result.status})` : ''}${result?.errorText ? `: ${result.errorText}` : ''}`
       );
       startBtn.disabled = false;
       stopBtn.disabled = true;
@@ -366,3 +417,89 @@ document.getElementById('addWorker')?.addEventListener('click', () => {
   activeWorkerId = newWorker.id;
   workerManager.onUpdate();
 });
+
+// === Auto-load config.json & DemoLibrary manifest ===
+document.addEventListener('DOMContentLoaded', async () => {
+  // DemoLibrary dropdown
+  const demoSel = document.getElementById('demoLibrarySelect');
+  const demoInfo = document.getElementById('demoLibraryInfo');
+  const fileInput = document.getElementById('logFile');
+  if (demoSel){
+    const manifest = await tryLoadJSON('DemoLibrary/manifest.json');
+    demoSel.innerHTML = '';
+    if (manifest && Array.isArray(manifest.files) && manifest.files.length){
+      const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='— choose demo file —';
+      demoSel.appendChild(opt0);
+      manifest.files.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.path; opt.textContent = f.name;
+        demoSel.appendChild(opt);
+      });
+      demoSel.onchange = async () => {
+        const v = demoSel.value;
+        if (v){
+          // disable upload and load file content
+          fileInput.disabled = true;
+          try{
+            const res = await fetch(v + '?_=' + Date.now()); const txt = await res.text();
+            window.__LOGSTREAMITY_DEMO__ = { path: v, content: txt };
+            demoInfo.textContent = `${v} loaded (${txt.split(/\r?\n/).filter(Boolean).length} lines)`;
+          }catch(e){
+            demoInfo.textContent = 'Failed to load demo file';
+          }
+        }else{
+          fileInput.disabled = false;
+          window.__LOGSTREAMITY_DEMO__ = null;
+          demoInfo.textContent = '';
+        }
+      };
+    } else {
+      const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='(no demo files found)';
+      demoSel.appendChild(opt0);
+    }
+  }
+
+  // config.json auto-load
+  const conf = await tryLoadJSON('config.json');
+  if (conf){
+    // endpoint & token
+    const endpointInput = document.getElementById('endpoint');
+    const tokenInput = document.getElementById('token');
+    if (conf.endpoint) endpointInput.value = conf.endpoint;
+    if (conf.token) tokenInput.value = conf.token;
+    // dark mode
+    const theme = (conf.global && conf.global.darkMode) || 'auto';
+    if (theme === 'dark') document.documentElement.setAttribute('data-theme','dark');
+    else if (theme === 'light') document.documentElement.setAttribute('data-theme','light');
+    else document.documentElement.removeAttribute('data-theme');
+    // workers preset (we use only first as default visible worker)
+    if (Array.isArray(conf.workers) && conf.workers.length){
+      const w = conf.workers[0];
+      // Populate UI fields
+      document.getElementById('delay').value = w.delayMs ?? 1000;
+      document.getElementById('lineVolume').value = w.batchSize ?? 1;
+      const modeId = `mode-${w.mode||'sequential'}`;
+      const mb = document.getElementById(modeId); if (mb) mb.click();
+      // attributes
+      if (w.attributes){
+        try {
+          localStorage.setItem('logstreamityAttrs', JSON.stringify(w.attributes));
+        } catch{}
+      }
+      // pre-load demo file if provided
+      if (w.file){
+        const demoSel = document.getElementById('demoLibrarySelect');
+        if (demoSel){
+          const opt = Array.from(demoSel.options).find(o => o.value === w.file);
+          if (opt){ demoSel.value = w.file; demoSel.dispatchEvent(new Event('change')); }
+        }
+      }
+    }
+    // remote control auto-enable?
+    const rct = document.getElementById('remoteControlToggle_removed');
+    if (conf.global && conf.global.remoteControl === true && rct){ rct.checked = true; }
+  }
+});
+
+
+// (remote control removed)

@@ -29,6 +29,17 @@
       }
     }
   </script>
+
+<style>
+  .status-dot { width: 10px; height: 10px; border-radius: 9999px; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .status-ready { background:#22c55e; } /* green */
+  .status-busy { background:#6f2dbd; }  /* dynatrace-ish purple */
+  .status-error{ background:#ef4444; }  /* red */
+  [data-theme="dark"] .status-ready { box-shadow: 0 0 0 2px rgba(34,197,94,.2); }
+  [data-theme="dark"] .status-busy  { box-shadow: 0 0 0 2px rgba(111,45,189,.2); }
+  [data-theme="dark"] .status-error { box-shadow: 0 0 0 2px rgba(239,68,68,.2); }
+</style>
+
 </head>
 <body class="bg-gray-50">
   <div class="flex h-screen">

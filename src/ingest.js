@@ -1,16 +1,20 @@
 // src/ingest.js
+import { RateLimiter } from './modules/rate-limiter.js';
 
-export const processEndpointUrl = (url) => {
-  url = url.trim().replace(/\/$/, '');
-  url = url.replace('.apps.', '.');
 
-  if (!url.endsWith('/api/v2/logs/ingest')) {
-    url = url.split('/').slice(0, 3).join('/');
-    url = `${url}/api/v2/logs/ingest`;
-  }
-
-  return url;
+export const processEndpointUrl = (input) => {
+  if (!input) return "";
+  let urlStr = String(input).trim();
+  if (!/^https?:\/\//i.test(urlStr)) urlStr = "https://" + urlStr;
+  let u;
+  try { u = new URL(urlStr); } catch { return urlStr; }
+  u.hostname = u.hostname.replace(/\.apps\./i, "."); // remove .apps. (case-insensitive)
+  u.pathname = "/api/v2/logs/ingest";
+  u.search = "";
+  u.hash = "";
+  return u.toString();
 };
+
 
 const RATE_LIMIT_PER_SECOND = 90; // Keep safely below 100 events/sec limit
 
@@ -109,89 +113,95 @@ export const buildPayload = (line, selectedAttributes, timestamp) => {
 };
 
 export const sendLogBatch = async (endpoint, token, lines, selectedAttributes, options = {}) => {
-  const { mode = 'sequential' } = options;
-  
-  // Build payloads, filtering out nulls from empty lines and sleep commands
+  const { mode = 'sequential', rateLimitPerSecond = 90 } = options;
+  // Build payloads, filtering out nulls (empty lines / [[[SLEEP ...]]] directives)
+  let seqBase = typeof options.seqNo === 'number' ? options.seqNo : 0;
+  if (!options.sourceId) options.sourceId = cryptoRandomHex();
+  const sourceId = options.sourceId;
+
   const payloads = lines
     .map((line, index) => {
-      // Check for sleep command
       const sleepMatch = line.trim().match(/^\[\[\[SLEEP\s+(\d+)\]\]\]$/);
-      if (sleepMatch) {
-        return { sleep: parseInt(sleepMatch[1], 10) };
+      if (sleepMatch) return { sleep: parseInt(sleepMatch[1], 10) };
+      // Timestamp strategy: 'scheduled' uses a running clock advanced by timestampStepMs per event
+      const useSched = options.timestampStrategy === 'scheduled';
+      if (useSched && typeof options.timestampNext !== 'number') {
+        options.timestampNext = Date.now();
       }
-      
-      return buildPayload(
-        line,
-        selectedAttributes,
-        getCurrentTimestamp(mode, options.currentLineIndex + index, options.logLines, options)
-      );
+      const ts = useSched ? options.timestampNext : Date.now();
+      const payload = buildPayload(line, selectedAttributes, ts);
+      if (useSched) options.timestampNext += (options.timestampStepMs || 0);
+      if (!payload) return null;
+      payload.source_id = sourceId;
+      payload.seq_no = seqBase++;
+      return payload;
     })
-    .filter(p => p !== null);
+    .filter(Boolean);
 
-  if (payloads.length === 0) return true;
+  options.seqNo = seqBase;
 
-  // For non-sequential modes, process in batches respecting rate limits
+  const limiter = new RateLimiter(rateLimitPerSecond);
+
   if (mode !== 'sequential') {
-    const batchSize = RATE_LIMIT_PER_SECOND;
+    const batchSize = Math.max(1, rateLimitPerSecond);
     for (let i = 0; i < payloads.length; i += batchSize) {
-      const batch = payloads.slice(i, i + batchSize);
-      const validBatch = batch.filter(p => !p.sleep);
-      
-      if (validBatch.length === 0) continue;
-
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Api-Token ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(validBatch)
-        });
-
-        if (!response.ok) {
-          console.error('Failed to send batch:', response.status, response.statusText);
-          return false;
-        }
-
-        // Minimal delay between batches to respect rate limits
-        if (i + batchSize < payloads.length) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-      } catch (error) {
-        console.error('[Log Ingest] Network Error:', error);
-        return false;
+      const batch = payloads.slice(i, i + batchSize).filter(p => !p.sleep);
+      if (batch.length === 0) continue;
+      await limiter.take(batch.length);
+      const r = await sendWithRetry(endpoint, token, batch);
+      if (!r.ok) {
+        return { success: false, status: r.status, errorText: r.text };
+      }
+      if (i + batchSize < payloads.length) {
+        await sleep(50);
       }
     }
-    return true;
+    return { success: true };
   }
 
-  // For sequential mode, process one by one with UI feedback
-  for (const payload of payloads) {
-    if (payload.sleep) {
-      await new Promise(resolve => setTimeout(resolve, payload.sleep));
+  // Sequential mode: send one-by-one respecting rate limit and retries
+  for (const p of payloads) {
+    if (p.sleep) {
+      await sleep(p.sleep);
       continue;
     }
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Api-Token ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify([payload])
-      });
-
-      if (!response.ok) {
-        console.error('Failed to send log:', response.status, response.statusText);
-        return false;
-      }
-    } catch (error) {
-      console.error('[Log Ingest] Network Error:', error);
-      return false;
+    await limiter.take(1);
+    const r = await sendWithRetry(endpoint, token, [p]);
+    if (!r.ok) {
+      return { success: false, status: r.status, errorText: r.text };
     }
   }
-
-  return true;
+  return { success: true };
 };
+
+function cryptoRandomHex() {
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    const arr = new Uint32Array(2); crypto.getRandomValues(arr);
+    return Array.from(arr, (n) => n.toString(16)).join("");
+  }
+  try { const { randomBytes } = require("crypto"); return randomBytes(8).toString("hex"); }
+  catch { return Math.random().toString(16).slice(2) + Date.now().toString(16); }
+}
+
+
+async function sendWithRetry(endpoint, token, body, attempt = 0) {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Api-Token ${token}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify(body)
+  });
+  if (res.ok) return { ok: true, res };
+  const status = res.status;
+  // retry on 429 and 5xx up to 5 times
+  if ((status === 429 || status >= 500) && attempt < 5) {
+    const ra = parseInt(res.headers.get('Retry-After') || '0', 10);
+    const backoff = ra ? ra*1000 : (250 * Math.pow(2, attempt+1) + Math.floor(Math.random()*100));
+    await sleep(backoff);
+    return sendWithRetry(endpoint, token, body, attempt+1);
+  }
+  let txt = ''; try { txt = await res.text(); } catch {}
+  return { ok: false, status, text: txt };
+}

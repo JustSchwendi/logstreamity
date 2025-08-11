@@ -1,101 +1,122 @@
 # Logstreamity — Dynatrace Log Ingest Playground
 
-Logstreamity is a **fully client-side** web application to simulate and test log ingestion into a [Dynatrace](https://www.dynatrace.com) tenant using the **Logs API v2**.
-
-🚀 Use this tool to explore ingestion behavior, troubleshoot formatting issues, demo observability flows — all directly from your browser, with **no data storage or backend** involved.
+Logstreamity ist eine **rein clientseitige** Web‑App, um Logs gegen einen Dynatrace‑Tenant (Logs API v2) zu senden – ideal zum Testen von Ingest‑Verhalten, Ratelimits, Timestamps und Attributen. Keine Server‑Komponente, keine Speicherung.
 
 ---
 
-## 🔧 Features
+## ✨ Neu in dieser Version
 
-- Upload and ingest uncompressed log files (`.log`, `.txt`, JSON, XML)
-- Simulate real-time ingestion line by line with configurable delay
-- Inject structured log attributes using predefined or custom fields
-- Definable ingest **start timestamp**, decoupled from system time (e.g. `2025-05-22T15:00:00`)
-- `[[[SLEEP 1000]]]` directive support for in-line ingestion pauses
-- Skips blank/empty lines to avoid noise
-- Ingest loop mode: replay the log file endlessly
-- Debug mode with live preview of parsed and ingested log data
-- Pre-upload connection test to validate endpoint + token
-- Attribute search and injection interface
-- Hosted log library samples and webhook test calls
-- Works fully offline — runs 100% in your browser, no external dependencies
+- **Multi‑Worker (parallel)**: Eigener Web‑Worker pro Quelle (z. B. *webserver*, *user_session*, *firewall*). Jeder Worker sendet **sequenziell** für seine Quelle (keine Duplikate/Gaps), global parallel.
+- **Stabile Timestamps pro Modus**  
+  - **Sequential**: „Live‑Replay“ – echte Wartezeit gemäß `delayMs` (real‑time).  
+  - **Historic / Scattered / Random**: Versand so schnell wie möglich, **aber** Timestamps werden gemäß `delayMs`/Chunk **geplant** (realistische Zeitstempel ohne echte Wartezeit).
+- **Robuste URL‑Normalisierung**: `.apps.` (case‑insensitive) wird entfernt; Pfad/Query/Hash werden verworfen; finaler Pfad stets `/api/v2/logs/ingest`. Protokoll `https://` wird ergänzt, wenn nötig.
+- **Fehler/Retry/Backoff**: 429/5xx werden mit Exponential Backoff + `Retry‑After` bis 5× erneut versucht. UI zeigt HTTP‑Status/Text an.
+- **Rate‑Limit (Client)**: Token‑Bucket begrenzt Events/s pro Worker bzw. gesamt (konfigurierbar).
+- **Status‑Dot**: **Grün** (ready), **Lila** (busy), **Rot** (error).
+- **DemoLibrary‑Dropdown**: Auswahl aus mitgelieferten Demo‑Logs; deaktiviert Dateiupload solange gewählt.
+- **Dark Mode + A11y‑Basics**: CSS‑Variablen, hoher Kontrast, Status‑Text neben Dot.
 
----
-
-## 📦 How It Works
-
-- Sends logs to your Dynatrace environment via `POST /api/v2/logs/ingest`
-- Requires a Dynatrace API token with `logs.ingest` scope
-- All data remains local — no logging, caching, or external calls
+> Hinweis: Remote‑Steuerung (Webhooks/WebSockets) ist **nicht** Teil dieser Version. GitHub Pages ist statisch; optionales Polling wurde entfernt/deaktiviert.
 
 ---
 
-## ✨ Feature Button Reference
+## 🧩 Features
 
-### 🔘 Inject Attributes
-Adds a predefined set of semantic attributes to each log line — like `host.name`, `dt.source_entity`, and `service.name`.  
-Useful for testing enriched logs that link to entities in Smartscape and Grail. The attributes are auto-prefilled per definition of the Dynatrace product documentation. Please load a attributes config file to ingest custom attributes.
-
-### 🕓 Historic Logs
-Allows to to ingest backdated logs. Preserves original timestamps (if present) or uses a custom ingest start time.  
-Great if you would like to retrofit an existing entity or problem with logs for testing purposes, or load a demo scenario.
-
-### 💥 Scattered Logs
-Randomizes the order of log line ingestion to mimic asynchronous, out-of-order delivery.  
-Ideal for testing log sorting, causality, or distributed ingestion edge cases.
-Great for use cases where you look to load several hours of logs in a realistic look and feel for lab environments.
+- Upload/Versand von `.txt`/`.log`/JSON/XML‑Zeilen
+- Attribute injizieren (vordefiniert + frei) – inkl. `source_id`, `seq_no`, `worker` (für Dedupe/Analyse)
+- In‑Line SLEEP‑Direktiv: `[[[SLEEP 1000]]]`
+- Startzeit steuerbar (Historic/Scattered/Random via geplante Timestamps)
+- Live‑Status, Fortschritt, Fehlercodes
 
 ---
 
-## 🧪 Try It Live
+## ⚙️ Konfiguration
 
-▶️ [justschwendi.github.io/logstreamity](https://justschwendi.github.io/logstreamity)
+### `config.json` (optional, automatisch geladen aus Repo‑Root)
 
-Or just download it on your computer and run 'python -m http.server 8000' in your local console in the same directory.
-This will start a local webserver on port 8000 that will host the application. 
-Due to multiple js libraries you can no longer just double-click the index.html file
+```jsonc
+{
+  "endpoint": "https://tenantID.live.apps.dynatrace.com",
+  "token": "DT0c01...",
+
+  "global": {
+    "eventsPerSecond": 0,     // 0 = kein globales Client‑Throttling
+    "darkMode": "auto"        // "auto" | "light" | "dark"
+  },
+
+  "workers": [
+    {
+      "name": "webserver",
+      "mode": "sequential",   // "sequential" | "historic" | "scattered" | "random"
+      "delayMs": 50,
+      "batchSize": 1,
+      "randomize": false,
+      "attributes": { "source": "web" },
+      "file": "DemoLibrary/web.txt"   // optional: lädt Demo‑Datei automatisch
+    },
+    {
+      "name": "user_session",
+      "mode": "historic",
+      "delayMs": 4000,
+      "batchSize": 10,
+      "randomize": true,
+      "attributes": { "source": "session" },
+      "file": "DemoLibrary/session.txt"
+    }
+  ]
+}
+```
+
+- Wird gefunden → UI‑Felder werden befüllt; der **erste Worker** prägt das sichtbare UI. Alle Worker aus `workers[]` werden nacheinander in **eigenen Web‑Workern** gestartet.
+- **Endpoint‑Normalisierung** sorgt automatisch für valide Ingest‑URL (`https://…/api/v2/logs/ingest`).
+
+### DemoLibrary
+
+- `DemoLibrary/manifest.json` listet alle mitgelieferten Demo‑Dateien (wird automatisch erzeugt).
+- Dropdown unter **Step 2**; Auswahl deaktiviert Upload und lädt die Datei in die App.
 
 ---
 
-## 🛡️ Disclaimer
+## 🕹️ Modi & Timestamps
 
-> ⚠️ This tool is provided **as-is** with no warranty of any kind.
-
-All tokens, URLs, and log data are processed **entirely in your browser** and never sent anywhere else, unless you use the github.io hosted version. Use at your own risk.
-
----
-
-## 🧠 Why?
-
-- Testing log ingestion shouldn’t require setting up full pipelines and demo-lab environments
-- Perfect for demos, education, or parsing experiments
-- Helps test edge cases like timestamp mismatches, encoding, or delays
-- Enables you to retrofit your use cases with pre-defined logs
+| Modus        | Versand            | Timestamp‑Strategie                                     |
+|--------------|--------------------|---------------------------------------------------------|
+| Sequential   | Echtzeit (await + delay) | `Date.now()` je Event + echte Wartezeit (`delayMs`)     |
+| Historic     | so schnell wie möglich   | Geplante Timestamps: Basetime + Schritte aus `delayMs`/Chunk |
+| Scattered    | wie Historic, aber verteilt | Geplante Timestamps (gleichmäßige Verteilung)         |
+| Random       | wie Historic, aber random Order | Geplante Timestamps (Offsets fix, Reihenfolge gemischt) |
 
 ---
 
-## 🧑‍💻 Contribute
+## 🔐 Fehlerbehandlung & Limits
 
-- Fork the repo
-- Submit a pull request
-- Report issues or suggest features
+- **HTTP 429/5xx** → Retry mit Backoff (`Retry‑After` respektiert), max. 5 Versuche.
+- **Records/Request**: wir senden default **einzeln** im Sequential‑Modus, und **Batch** in anderen Modi.  
+- **Empfehlung**: Client‑Limit konservativ halten (z. B. 90 Events/s pro Worker).
 
-GitHub: [github.com/JustSchwendi/logstreamity](https://github.com/JustSchwendi/logstreamity)
+> Hinweis: Dynatrace Limits können sich ändern; prüfe bei Bedarf die offiziellen Docs im Tenant‑Kontext.
 
 ---
 
-## 🔮 To-Do / Roadmap
+## 🖥️ Entwicklung & Build
 
-- [ ] Multi-threaded processing with worker pool for high-volume logs
-- [ ] Support for **remote worker execution** via webhook callbacks
-- [ ] Dark mode and accessibility optimizations
-- [ ] Log format validation hints and suggestions
+- Lokaler Test: irgendein Static‑Server (z. B. `npx http-server`, `python -m http.server`).  
+- Deployment: GitHub Pages (Branch/Root).
+
+---
+
+## 🔮 Roadmap (aktualisiert)
+
+- [x] Multi‑Worker (Worker‑Pool)
+- [x] Dark Mode + A11y‑Verbesserungen (Basis)
+- [ ] Erweiterte Worker‑UI (Add/Remove/Weights live)
+- [ ] Format‑Erkennung & Validierung (Hints)
+- [ ] Export/Import von Sessions (inkl. Attributen & Worker‑Setup)
 
 ---
 
 ## 🪪 License
 
-This project is released under the [Unlicense](https://unlicense.org/).
-
-> You are free to use, modify, and distribute this code for any purpose — no permission or attribution required.
+Dieses Projekt steht unter der [Unlicense](https://unlicense.org/).
+Frei verwendbar, veränderbar, weiterverteilbar – ohne Auflagen.
