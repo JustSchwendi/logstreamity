@@ -120,3 +120,8 @@ Logstreamity ist eine **rein clientseitige** Web‑App, um Logs gegen einen Dyna
 
 Dieses Projekt steht unter der [Unlicense](https://unlicense.org/).
 Frei verwendbar, veränderbar, weiterverteilbar – ohne Auflagen.
+
+
+### Severity / Loglevel Handling
+- Beim **Laden** der Logdatei (oder Demo-Auswahl) werden alle Zeilen vorverarbeitet und ein möglicher Loglevel erkannt (`[WARN]`, `<ERROR>`, `INFO;`, `DBG`, `CRITICAL`, …).  
+- Der erkannte Level wird als `derived.loglevel` gespeichert und beim Ingest als Attribut `loglevel` gesetzt — **außer** der Benutzer hat eines der folgenden Attribute selbst gesetzt: `level`, `loglevel`, `severity`, `status`, `syslog.severity`. In dem Fall hat der Benutzerwert Vorrang und es wird **nicht** automatisch gesetzt.
