@@ -1,13 +1,41 @@
+// src/webhook-worker.js — ingest worker with loop support
 
-// src/webhook-worker.js — Ingest worker (sequential per worker), cancellable, with retry & rate-limit
-
-// --- Utilities ---
+/* ---------- utils ---------- */
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+class RateLimiter{
+  constructor(rps){
+    this.capacity = Math.max(1, Number(rps||90));
+    this.tokens   = this.capacity;
+    this._t = setInterval(() => {
+      this.tokens = Math.min(this.capacity, this.tokens + this.capacity);
+    }, 1000);
+  }
+  async take(n=1){
+    n = Math.max(1, n|0);
+    while (this.tokens < n){
+      await sleep(10);
+      if (cancelled) throw new Error("cancelled");
+    }
+    this.tokens -= n;
+  }
+  stop(){ try{ clearInterval(this._t); }catch{} }
+}
+
+function normalizeEndpoint(input){
+  if(!input) return "";
+  let s = String(input).trim();
+  if(!/^https?:\/\//i.test(s)) s = "https://" + s;
+  let u; try{ u = new URL(s);}catch{ return s; }
+  u.hostname = u.hostname.replace(/\.apps\./i, ".");
+  u.pathname = "/api/v2/logs/ingest"; u.search=""; u.hash="";
+  return u.toString();
+}
 
 let cancelled = false;
 let currentController = null;
 
-function newAbortController(){
+function newAbortController() {
   if (typeof AbortController !== 'undefined') {
     currentController = new AbortController();
     return currentController;
@@ -15,91 +43,107 @@ function newAbortController(){
   currentController = null;
   return null;
 }
-function abortInFlight(){
-  try { currentController && currentController.abort(); } catch {}
+function abortInFlight() {
+  try { currentController?.abort(); } catch {}
   currentController = null;
-}
-
-class RateLimiter{
-  constructor(rps){
-    this.capacity = Math.max(1, Number(rps || 90));
-    this.tokens = this.capacity;
-    this._t = setInterval(() => {
-      this.tokens = Math.min(this.capacity, this.tokens + this.capacity);
-    }, 1000);
-  }
-  stop(){ try { clearInterval(this._t); } catch {} }
-  async take(n=1){
-    n = Math.max(1, n|0);
-    while (this.tokens < n) {
-      if (cancelled) throw new Error('cancelled');
-      await sleep(10);
-    }
-    this.tokens -= n;
-  }
-}
-
-function normalizeEndpoint(input){
-  if (!input) return "";
-  let s = String(input).trim();
-  if (!/^https?:\/\//i.test(s)) s = "https://" + s;
-  let u;
-  try { u = new URL(s); } catch { return s; }
-  u.hostname = u.hostname.replace(/\.apps\./i, ".");
-  u.pathname = "/api/v2/logs/ingest";
-  u.search = "";
-  u.hash = "";
-  return u.toString();
 }
 
 async function sendWithRetry(endpoint, token, body, attempt=0, signal){
   const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Authorization": `Api-Token ${token}`,
-      "Content-Type": "application/json; charset=utf-8"
-    },
+    method:"POST",
+    headers:{ "Authorization":`Api-Token ${token}`, "Content-Type":"application/json; charset=utf-8" },
     body: JSON.stringify(body),
     signal
   });
-  if (res.ok) return { ok: true, res };
+  if (res.ok) return {ok:true, res};
   const status = res.status;
-  if ((status === 429 || status >= 500) && attempt < 5) {
-    const ra = parseInt(res.headers.get("Retry-After") || "0", 10);
-    const backoff = ra ? ra * 1000 : (250 * Math.pow(2, attempt + 1) + Math.floor(Math.random() * 100));
+  if ((status === 429 || status >= 500) && attempt < 5){
+    const ra = parseInt(res.headers.get("Retry-After")||"0",10);
+    const backoff = ra ? ra*1000 : (250 * Math.pow(2, attempt+1) + Math.floor(Math.random()*100));
     await sleep(backoff);
-    return sendWithRetry(endpoint, token, body, attempt + 1, signal);
+    return sendWithRetry(endpoint, token, body, attempt+1, signal);
   }
-  let text = "";
-  try { text = await res.text(); } catch {}
-  return { ok: false, status, text };
+  let txt = ""; try { txt = await res.text(); } catch {}
+  return {ok:false, status, text:txt};
 }
 
-function makeScheduler(delayMs, batchSize, baseTime){
-  const step = Math.max(0, Math.floor(Number(delayMs||0) / Math.max(1, Number(batchSize||1))));
-  let t = baseTime || Date.now();
-  return function next(){ const cur = t; t += step; return cur; };
-}
+/* ---------- severity parsing ---------- */
+const USER_SEVERITY_KEYS = ['level','loglevel','severity','status','syslog.severity'];
 
-// severity helpers
-const SEVERITY_KEYS = new Set(["level", "loglevel", "severity", "status", "syslog.severity"]);
 function hasUserSeverityAttr(attrs){
-  if (!attrs) return false;
-  for (const k of Object.keys(attrs)) {
-    if (SEVERITY_KEYS.has(k.toLowerCase())) return true;
-  }
-  return false;
+  if (!attrs || typeof attrs !== 'object') return false;
+  return USER_SEVERITY_KEYS.some(k => Object.prototype.hasOwnProperty.call(attrs, k));
 }
 
-// --- Worker message loop ---
+const SEVERITY_TOKENS = [
+  "trace","trc",
+  "debug","dbg",
+  "info","information","notice",
+  "warn","warning","alert",
+  "error","err",
+  "fatal","critical","crit","emerg","emergency"
+];
+
+function normalizeSeverity(tok){
+  const t = String(tok||"").toLowerCase();
+  if (["trace","trc"].includes(t)) return "trace";
+  if (["debug","dbg"].includes(t)) return "debug";
+  if (["info","information","notice"].includes(t)) return "info";
+  if (["warn","warning","alert"].includes(t)) return "warn";
+  if (["error","err"].includes(t)) return "error";
+  if (["fatal","critical","crit","emerg","emergency"].includes(t)) return "fatal";
+  return null;
+}
+
+const RX_BRACKET = /^\s*[\[\(<\{]\s*([A-Za-z]+)\s*[\]\)>\}][\s:;\-]*/;
+const RX_PREFIX  = /^\s*([A-Za-z]+)[\s:;\-]/;
+
+function parseSeverityFromLine(line){
+  if (!line) return null;
+  let m = RX_BRACKET.exec(line);
+  if (m) { const v = normalizeSeverity(m[1]); if (v) return v; }
+  m = RX_PREFIX.exec(line);
+  if (m) { const v = normalizeSeverity(m[1]); if (v) return v; }
+  const first = String(line).slice(0, 24).toLowerCase();
+  for (const tok of SEVERITY_TOKENS){
+    if (first.includes(tok)) {
+      const v = normalizeSeverity(tok); if (v) return v;
+    }
+  }
+  return null;
+}
+
+/* ---------- line helpers ---------- */
+function getLineContent(any){
+  return (any && typeof any === 'object' && 'content' in any) ? String(any.content ?? "") : String(any ?? "");
+}
+function getDerivedLevel(any){
+  if (any && typeof any === 'object' && any.derived && typeof any.derived === 'object'){
+    const v = any.derived.loglevel;
+    if (v) return String(v);
+  }
+  return null;
+}
+function isSleepDirective(s){ return /^\s*\[\[\[\s*SLEEP\s+(\d+)\s*\]\]\]\s*$/i.test(s || ""); }
+function sleepMsFromDirective(s){ const m = /^\s*\[\[\[\s*SLEEP\s+(\d+)\s*\]\]\]\s*$/i.exec(s || ""); return m ? parseInt(m[1],10) : 0; }
+
+/* ---------- timestamp scheduling ---------- */
+function makeScheduler(delayMs, batchSize, baseTime){
+  const step = Math.max(0, Math.floor((Number(delayMs)||0) / Math.max(1, Number(batchSize)||1)));
+  let t = baseTime || Date.now();
+  return () => { const cur = t; t += step; return cur; };
+}
+
+/* ---------- worker message handling ---------- */
 self.onmessage = async (event) => {
-  if (event.data.type === "STOP") {
+  const { type } = event.data || {};
+  if (type === "STOP"){
     cancelled = true;
     abortInFlight();
     return;
   }
-  if (event.data.type !== "START_INGEST") {
-    self.postMessage({ type: "INFO", message: "Unknown command" });
+  if (type !== "START_INGEST"){
+    self.postMessage({ type:"INFO", message:"Unknown command" });
     return;
   }
 
@@ -107,89 +151,147 @@ self.onmessage = async (event) => {
 
   const { config, lines, workerInfo } = event.data;
   const endpoint = normalizeEndpoint(config.endpoint);
-  const token = config.token;
-  const mode = String(config.mode || "sequential");
-  const delayMs = Number(config.delayMs || 0);
-  const batchSize = Number(config.batchSize || 1);
-  const randomize = !!config.randomize;
-  const baseAttributes = config.attributes || {};
-  const rateLimit = Number(config.rateLimitPerSecond || 90);
+  const token    = config.token;
+  const mode     = (config.mode || "sequential").toLowerCase();
+  const delayMs  = Number(config.delayMs || 0);
+  const batchSize= Number(config.batchSize || 1);
+  const randomize= !!config.randomize; // kept for compatibility
+  const userAttrs= config.attributes || {};
+  const rps      = Number(config.rateLimitPerSecond || 90);
+  const loop     = !!config.loop;
+  const limiter  = new RateLimiter(rps);
 
-  const limiter = new RateLimiter(rateLimit);
   const sourceId = (Math.random().toString(16).slice(2) + Date.now().toString(16));
   let seq = 0;
+  let cycle = 0;
 
   const finish = (kind, msg) => {
     try { limiter.stop(); } catch {}
-    if (kind === 'cancel') self.postMessage({ type: "CANCELLED", message: msg || "Stopped" });
-    else if (kind === 'done') self.postMessage({ type: "DONE", message: msg || "Finished" });
-    else if (kind === 'error') self.postMessage({ type: "ERROR", error: msg || "Error" });
+    if (kind === 'cancel') self.postMessage({ type:"CANCELLED", message: msg || "Stopped" });
+    else if (kind === 'done') self.postMessage({ type:"DONE", message: msg || "Finished" });
+    else if (kind === 'error') self.postMessage({ type:"ERROR", error: msg || "Error" });
   };
 
-  const userOverridesSeverity = hasUserSeverityAttr(baseAttributes);
+  const total = Array.isArray(lines) ? lines.length : 0;
 
-  try {
-    if (mode === "sequential") {
-      // Live replay
-      for (let i=0; i<lines.length; i+=batchSize){
-        const chunk = lines.slice(i, i + batchSize);
-        for (const item of chunk){
-          if (cancelled) return finish('cancel');
-          await limiter.take(1);
-          const obj = (item && typeof item === 'object') ? item : { content: String(item ?? "") };
-          const attrs = { ...baseAttributes, source_id: sourceId, seq_no: seq++, worker: workerInfo?.name || "logstreamity" };
-          if (!userOverridesSeverity && obj.derived && obj.derived.loglevel) {
-            attrs.loglevel = obj.derived.loglevel;
-          }
-          const payload = [{
-            content: obj.content,
-            attributes: attrs,
-            timestamp: Date.now()
-          }];
-          const ctrl = newAbortController();
-          const r = await sendWithRetry(endpoint, token, payload, 0, ctrl?.signal);
-          currentController = null;
-          if (!r.ok) return finish('error', `HTTP ${r.status}: ${r.text || ""}`);
-          if (cancelled) return finish('cancel');
-          if (delayMs > 0) { await sleep(delayMs); if (cancelled) return finish('cancel'); }
+  const runSequentialOnce = async () => {
+    for (let i=0; i<total; i += batchSize){
+      if (cancelled) return false;
+      const chunk = lines.slice(i, i+batchSize);
+      for (const item of chunk){
+        if (cancelled) return false;
+
+        const s = getLineContent(item);
+        if (isSleepDirective(s)){
+          const ms = sleepMsFromDirective(s);
+          if (ms > 0) await sleep(ms);
+          continue;
         }
-        const progress = Math.round(((i + chunk.length) / lines.length) * 100);
-        self.postMessage({ type: "PROGRESS", progress });
-      }
-      return finish('done', `Ingestion finished for worker "${workerInfo?.name || ''}"!`);
-    }
 
-    // Historic / scattered / random — scheduled timestamps, fast send
+        const derivedLvl = getDerivedLevel(item);
+        const rec = {
+          content: s,
+          timestamp: Date.now(),
+          ...userAttrs,
+          source_id: sourceId,
+          seq_no: seq++,
+          worker: (workerInfo && workerInfo.name) || "logstreamity"
+        };
+
+        const userHasSev = hasUserSeverityAttr(userAttrs);
+        if (!userHasSev){
+          const lvl = derivedLvl || parseSeverityFromLine(s);
+          if (lvl) rec.loglevel = lvl;
+        }
+
+        await limiter.take(1);
+        const ctrl = newAbortController();
+        const r = await sendWithRetry(endpoint, token, [rec], 0, ctrl?.signal);
+        currentController = null;
+        if (cancelled) return false;
+        if(!r.ok) { self.postMessage({ type:"ERROR", error: `HTTP ${r.status}: ${r.text||""}` }); return false; }
+      }
+      if (delayMs > 0){
+        await sleep(delayMs);
+        if (cancelled) return false;
+      }
+      const sent = Math.min(i + chunk.length, total);
+      self.postMessage({ type:"PROGRESS", progress: Math.round((sent/total)*100) });
+    }
+    return true;
+  };
+
+  const runScheduledOnce = async () => {
     const base = Date.now();
     const nextTs = makeScheduler(delayMs, batchSize, base);
-    let orderIdx = lines.map((_, i) => i);
-    if (mode === "random") orderIdx.sort(() => Math.random() - 0.5);
-    for (const idx of orderIdx) {
-      if (cancelled) return finish('cancel');
-      await limiter.take(1);
-      const item = lines[idx];
-      const obj = (item && typeof item === 'object') ? item : { content: String(item ?? "") };
-      const attrs = { ...baseAttributes, source_id: sourceId, seq_no: seq++, worker: workerInfo?.name || "logstreamity" };
-      if (!userOverridesSeverity && obj.derived && obj.derived.loglevel) {
-        attrs.loglevel = obj.derived.loglevel;
+    const prepared = [];
+    for (let i=0; i<total; i++){
+      const item = lines[i];
+      const s = getLineContent(item);
+      if (!s) continue;
+      const ts = nextTs();
+      const derivedLvl = getDerivedLevel(item);
+      prepared.push({ s, ts, derivedLvl });
+    }
+    if (mode === "random"){
+      prepared.sort(() => Math.random() - 0.5);
+    }
+    for (let k=0; k<prepared.length; k++){
+      if (cancelled) return false;
+      const { s, ts, derivedLvl } = prepared[k];
+
+      const rec = {
+        content: s,
+        timestamp: ts,
+        ...userAttrs,
+        source_id: sourceId,
+        seq_no: seq++,
+        worker: (workerInfo && workerInfo.name) || "logstreamity"
+      };
+      const userHasSev = hasUserSeverityAttr(userAttrs);
+      if (!userHasSev){
+        const lvl = derivedLvl || parseSeverityFromLine(s);
+        if (lvl) rec.loglevel = lvl;
       }
-      const payload = [{
-        content: obj.content,
-        attributes: attrs,
-        timestamp: nextTs()
-      }];
+
+      await limiter.take(1);
       const ctrl = newAbortController();
-      const r = await sendWithRetry(endpoint, token, payload, 0, ctrl?.signal);
+      const r = await sendWithRetry(endpoint, token, [rec], 0, ctrl?.signal);
       currentController = null;
-      if (!r.ok) return finish('error', `HTTP ${r.status}: ${r.text || ""}`);
-      if (cancelled) return finish('cancel');
-      if (seq % 50 === 0) {
-        self.postMessage({ type: "PROGRESS", progress: Math.round((seq / lines.length) * 100) });
+      if (cancelled) return false;
+      if(!r.ok){ self.postMessage({ type:"ERROR", error:`HTTP ${r.status}: ${r.text||""}` }); return false; }
+
+      if ((seq % 50) === 0){
+        self.postMessage({ type:"PROGRESS", progress: Math.round((seq/total)*100) });
       }
       if ((seq % 500) === 0) await sleep(1);
     }
-    return finish('done', `Ingestion finished for worker "${workerInfo?.name || ''}"!`);
-  } catch (e) {
+    return true;
+  };
+
+  try{
+    if (mode === "sequential"){
+      do {
+        self.postMessage({ type:"PROGRESS", progress: 0 });
+        const ok = await runSequentialOnce();
+        if (!ok || cancelled) break;
+        cycle++;
+        if (loop) self.postMessage({ type:"CYCLE", cycle });
+      } while (loop && !cancelled);
+      if (cancelled) return finish('cancel');
+      return finish('done', loop ? `Finished after ${cycle} loop(s)` : undefined);
+    } else {
+      do {
+        self.postMessage({ type:"PROGRESS", progress: 0 });
+        const ok = await runScheduledOnce();
+        if (!ok || cancelled) break;
+        cycle++;
+        if (loop) self.postMessage({ type:"CYCLE", cycle });
+      } while (loop && !cancelled);
+      if (cancelled) return finish('cancel');
+      return finish('done', loop ? `Finished after ${cycle} loop(s)` : undefined);
+    }
+  }catch(e){
     if (String(e).includes('cancelled')) return finish('cancel');
     return finish('error', String(e && e.message || e));
   }

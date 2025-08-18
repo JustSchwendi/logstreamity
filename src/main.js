@@ -28,15 +28,9 @@ const RX_PREFIX = /^\s*([A-Za-z]+)[\s:;-]/;
 function parseSeverityFromLine(line){
   if (!line) return null;
   let m = RX_BRACKET.exec(line);
-  if (m) {
-    const v = normalizeSeverity(m[1]);
-    if (v) return v;
-  }
+  if (m && normalizeSeverity(m[1])) return normalizeSeverity(m[1]);
   m = RX_PREFIX.exec(line);
-  if (m) {
-    const v = normalizeSeverity(m[1]);
-    if (v) return v;
-  }
+  if (m && normalizeSeverity(m[1])) return normalizeSeverity(m[1]);
   // fall back: scan tokens at start
   const first = String(line).slice(0, 24).toLowerCase();
   for (const tok of SEVERITY_TOKENS){
@@ -64,7 +58,6 @@ function prepareLinesFromText(text){
 // global prepared lines buffer
 let PREPARED_LINES = null;
 
-// Active web workers + UI rows
 const activeWorkers = new Set();
 const workerRowElems = new Map();
 
@@ -74,6 +67,87 @@ function enableStartAndClear(workerName){
   if (startBtn) startBtn.disabled = false;
   if (workerName) logStatus(`⚙ Ready: ${workerName} selected`);
 }
+
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-worker-id]');
+  if (!el) return;
+  const name = el.getAttribute('data-worker-name') || el.textContent.trim();
+  enableStartAndClear(name);
+});
+
+
+async function startWorkersPool(logLines, endpoint, token, uiOptions, workerManager){
+  // Build workers list: if workerManager has entries use them, else default one
+  const workers = workerManager && workerManager.getWorkers && workerManager.getWorkers().length
+    ? workerManager.getWorkers()
+    : [{ id: 0, name: 'logstreamity', mode: uiOptions.mode, delayMs: uiOptions.delay, batchSize: uiOptions.volume, randomize: uiOptions.randomize, attributes: uiOptions.attributes }];
+
+  let running = 0, errors = 0;
+  const dot = document.getElementById('status-dot');
+  function setBusy(){ if(dot){ dot.classList.remove('status-ready','status-error'); dot.classList.add('status-busy'); } }
+  function setReady(){ if(dot){ dot.classList.remove('status-busy','status-error'); dot.classList.add('status-ready'); } }
+  function setError(){ if(dot){ dot.classList.remove('status-busy','status-ready'); dot.classList.add('status-error'); } }
+
+  setBusy();
+  const startOne = async (wCfg) => {
+    return new Promise((resolve) => {
+      const w = new Worker('src/webhook-worker.js');
+      activeWorkers.add(w);
+      w.onmessage = (ev) => {
+        const d = ev.data;
+        if (d.type === 'PROGRESS') {
+          const el = workerRowElems.get(wCfg.id);
+          if (el) {
+            el.statusEl.classList.remove('status-ready'); el.statusEl.classList.add('status-busy');
+            el.metaEl.textContent = `progress ${d.progress}%`;
+          }
+          logStatus(`↗ ${wCfg.name}: ${d.progress}%`);
+		} else if (d.type === 'CYCLE') {
+		  logStatus(`↻ loop cycle ${d.cycle}`);
+        } else if (d.type === 'DONE' || d.type === 'CANCELLED') {
+          const el = workerRowElems.get(wCfg.id);
+          if (el) {
+            el.statusEl.classList.remove('status-busy','status-error'); el.statusEl.classList.add('status-ready');
+            el.metaEl.textContent = 'idle';
+          }
+          logStatus(`✓ ${wCfg.name}: done`);
+          w.terminate(); activeWorkers.delete(w);
+          running--;
+          if (running === 0) { if(errors) setError(); else setReady(); }
+          resolve(true);
+        } else if (d.type === 'ERROR') {
+          const el = workerRowElems.get(wCfg.id);
+          if (el) {
+            el.statusEl.classList.remove('status-busy'); el.statusEl.classList.add('status-error');
+            el.metaEl.textContent = 'error';
+          }
+          logStatus(`⚠ ${wCfg.name}: ${d.error}`);
+          w.terminate(); activeWorkers.delete(w);
+          errors++; running--;
+          if (running === 0) setError();
+          resolve(false);
+        }
+      };
+      const options = {
+        endpoint, token,
+        mode: wCfg.mode || uiOptions.mode,
+        delayMs: Number(wCfg.delayMs ?? uiOptions.delay),
+        batchSize: Number(wCfg.batchSize ?? uiOptions.volume),
+        randomize: !!(wCfg.randomize ?? uiOptions.randomize),
+        attributes: wCfg.attributes || uiOptions.attributes,
+        rateLimitPerSecond: 90
+		loop: loopEnabled           
+      };
+      running++;
+      w.postMessage({ type: 'START_INGEST', config: options, lines: (PREPARED_LINES || logLines), workerInfo: { id: wCfg.id, name: wCfg.name || 'logstreamity' } });
+    });
+  };
+
+  for (const w of workers) await startOne(w);
+  return errors === 0;
+}
+
 
 async function tryLoadJSON(path){
   try{
@@ -91,6 +165,7 @@ function setStatus(state){
   else if(state==='busy') dot.classList.add('status-busy');
   else if(state==='error') dot.classList.add('status-error');
 }
+
 
 import { updateLabels, updateAttributeList, showAttributeDropdown } from './ui.js';
 import { loadAttributes, saveAttributes, loadAttributesFromFile } from './attributes.js';
@@ -121,11 +196,13 @@ const configFileInput = document.getElementById('config-file');
 const helpTokenBtn = document.getElementById('help-token');
 
 let logLines = [];
+let ingestInterval = null;
 let currentLineIndex = 0;
 let loopEnabled = false;
 let randomizeEnabled = false;
 let selectedAttributes = loadAttributes();
 let attributeKeys = [];
+let activeWorkerId = null;
 
 fetch('./attributes.json')
   .then(res => res.json())
@@ -224,125 +301,90 @@ helpTokenBtn?.addEventListener('click', () => {
   alert(`To create a Dynatrace API token:\n\n1. Log into your Dynatrace tenant\n2. Go to Access Tokens\n3. Click "Generate new token"\n4. Add scope: logs.ingest\n5. Copy the token and paste it here`);
 });
 
-// ===== File upload → preprocess to RAM =====
 fileInput?.addEventListener('change', function () {
   const file = fileInput.files[0];
   if (file) {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = String(e.target.result || '');
-      PREPARED_LINES = prepareLinesFromText(text);
-      logLines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+      const txt = String(e.target?.result || '');
+      PREPARED_LINES = prepareLinesFromText(txt);
+      logLines = txt.split(/\r?\n/).filter(line => line.trim() !== '');
       fileStatus.textContent = `${logLines.length} log lines loaded.`;
-      validateReady();
     };
     reader.readAsText(file);
   }
 });
 
-// ===== Worker pool start/stop =====
-async function startWorkersPool(lines, endpoint, token, uiOptions, wm){
-  // Build workers list: if wm has entries use them, else default one
-  const workers = (wm && wm.getWorkers && wm.getWorkers().length)
-    ? wm.getWorkers()
-    : [{ id: 0, name: 'logstreamity', mode: uiOptions.mode, delayMs: uiOptions.delay, batchSize: uiOptions.volume, randomize: uiOptions.randomize, attributes: uiOptions.attributes }];
-
-  let running = 0, errors = 0;
-  const dot = document.getElementById('status-dot');
-  const setBusy = ()=>{ if(dot){ dot.classList.remove('status-ready','status-error'); dot.classList.add('status-busy'); } };
-  const setReady= ()=>{ if(dot){ dot.classList.remove('status-busy','status-error'); dot.classList.add('status-ready'); } };
-  const setError= ()=>{ if(dot){ dot.classList.remove('status-busy','status-ready'); dot.classList.add('status-error'); } };
-
-  setBusy();
-  const startOne = async (wCfg) => new Promise((resolve) => {
-    const workerUrl = new URL('./webhook-worker.js', import.meta.url);
-    const w = new Worker(workerUrl, { type: 'classic' });
-    activeWorkers.add(w);
-
-    w.onmessage = (ev) => {
-      const d = ev.data;
-      const row = workerRowElems.get(wCfg.id);
-      if (d.type === 'PROGRESS') {
-        if (row) {
-          row.statusEl.classList.remove('status-ready'); row.statusEl.classList.add('status-busy');
-          row.metaEl.textContent = `progress ${d.progress}%`;
-        }
-        logStatus(`↗ ${wCfg.name}: ${d.progress}%`);
-      } else if (d.type === 'DONE' || d.type === 'CANCELLED') {
-        if (row) {
-          row.statusEl.classList.remove('status-busy','status-error'); row.statusEl.classList.add('status-ready');
-          row.metaEl.textContent = 'idle';
-        }
-        logStatus(`✓ ${wCfg.name}: ${d.type === 'DONE' ? 'done' : 'stopped'}`);
-        try { w.terminate(); } catch {}
-        activeWorkers.delete(w);
-        running--;
-        if (running === 0) { if(errors) setError(); else setReady(); }
-        resolve(true);
-      } else if (d.type === 'ERROR') {
-        if (row) {
-          row.statusEl.classList.remove('status-busy'); row.statusEl.classList.add('status-error');
-          row.metaEl.textContent = 'error';
-        }
-        logStatus(`⚠ ${wCfg.name}: ${d.error}`);
-        try { w.terminate(); } catch {}
-        activeWorkers.delete(w);
-        errors++; running--;
-        if (running === 0) setError();
-        resolve(false);
-      }
-    };
-
-    const options = {
-      endpoint, token,
-      mode: wCfg.mode || uiOptions.mode,
-      delayMs: Number(wCfg.delayMs ?? uiOptions.delay),
-      batchSize: Number(wCfg.batchSize ?? uiOptions.volume),
-      randomize: !!(wCfg.randomize ?? uiOptions.randomize),
-      attributes: wCfg.attributes || uiOptions.attributes,
-      rateLimitPerSecond: 90
-    };
-    running++;
-    w.postMessage({ type: 'START_INGEST', config: options, lines, workerInfo: { id: wCfg.id, name: wCfg.name || 'logstreamity' } });
-  });
-
-  for (const w of workers) await startOne(w);
-  return errors === 0;
-}
-
-// ===== Start/Stop handlers =====
 startBtn?.addEventListener('click', async () => {
-  try { console.clear(); } catch {}
-  const endpoint = processEndpointUrl(endpointInput.value.trim());
+  try{console.clear();}catch{};const endpoint = processEndpointUrl(endpointInput.value.trim());
   const token = tokenInput.value.trim();
   const baseDelay = parseInt(delayInput.value.trim(), 10) || 1000;
   const baseVolume = parseInt(lineVolumeInput.value.trim(), 10) || 1;
-
-  const hasPrepared = Array.isArray(PREPARED_LINES) && PREPARED_LINES.length > 0;
-
-  if (!endpoint || !token || (!hasPrepared && logLines.length === 0)) {
-    alert('Please fill all fields and upload or select a log file.');
+  
+  if (!endpoint || !token || logLines.length === 0) {
+    alert('Please fill all fields and upload a log file.');
     return;
   }
 
   const modeBtn = document.querySelector('.btn-secondary.active') || document.getElementById('mode-sequential');
   const mode = modeBtn?.id?.replace('mode-', '') || 'sequential';
-
+  
+  // Add initial log message
   logStatus('Logstreamity worker start.');
+
+  const options = {
+    rateLimitPerSecond: 90,
+    mode,
+    delay: baseDelay,
+    lineVolume: baseVolume,
+    currentLineIndex,
+    logLines,
+    historicTimestamp: document.getElementById('historic-timestamp')?.value,
+    scatteredStart: document.getElementById('scattered-start')?.value,
+    scatteredEnd: document.getElementById('scattered-end')?.value,
+    scatteredChunks: parseInt(document.getElementById('scattered-chunks')?.value, 10)
+  };
+
+  if (mode === 'scattered' && !randomizeEnabled) {
+    randomizeEnabled = true;
+    randomizeBtn.classList.add('bg-green-100');
+    updateLabels(true);
+    logStatus('🎲 Randomization auto-enabled for Scattered mode');
+  }
 
   startBtn.disabled = true;
   stopBtn.disabled = false;
   loopBtn.disabled = false;
   currentLineIndex = 0;
 
-  const ok = await startWorkersPool(
-    (hasPrepared ? PREPARED_LINES : logLines),
-    endpoint,
-    token,
-    { mode, delay: baseDelay, volume: baseVolume, randomize: randomizeEnabled, attributes: Object.fromEntries(selectedAttributes) },
-    wm
-  );
-  startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true;
+  
+if (true) {
+    const selected = wm.getSelected();
+    const all = wm.getWorkers();
+    if (!all.length) wm.addWorker('logstreamity');
+    const ok = await startWorkersPool(logLines, endpoint, token, { mode, delay: baseDelay, volume: baseVolume, randomize: randomizeEnabled, attributes: Object.fromEntries(selectedAttributes) }, { getWorkers: () => wm.getWorkers() });
+    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true; return;
+  } else {
+    // For historic and scattered modes, process all at once
+    // Timestamp scheduling: use baseDelay per event to simulate gaps in time
+    options.timestampStrategy = 'scheduled';
+    options.timestampStepMs = baseDelay;
+    try {
+      const result = await sendLogBatch(endpoint, token, logLines, selectedAttributes, options);
+      logStatus(result?.success ? 
+        `✓ Processed all ${logLines.length} lines with ${mode} mode` : 
+        `⚠ Error processing logs in ${mode} mode${result?.status ? ` (HTTP ${result.status})` : ''}${result?.errorText ? `: ${result.errorText}` : ''}`
+      );
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      loopBtn.disabled = true;
+    } catch (error) {
+      logStatus(`⚠ Error: ${error.message}`);
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      loopBtn.disabled = true;
+    }
+  }
 });
 
 stopBtn?.addEventListener('click', () => {
@@ -398,7 +440,7 @@ randomizeBtn?.addEventListener('click', () => {
       const now = new Date();
       now.setSeconds(0);
       now.setMilliseconds(0);
-      if (input) input.value = now.toISOString().slice(0, 16);
+      input.value = now.toISOString().slice(0, 16);
     }
 
     if (id === 'mode-scattered') {
@@ -406,8 +448,8 @@ randomizeBtn?.addEventListener('click', () => {
       const end = document.getElementById('scattered-end');
       const now = new Date();
       const later = new Date(now.getTime() + 3600000);
-      if (start) start.value = now.toISOString().slice(0, 16);
-      if (end) end.value = later.toISOString().slice(0, 16);
+      start.value = now.toISOString().slice(0, 16);
+      end.value = later.toISOString().slice(0, 16);
 
       if (!randomizeEnabled) {
         randomizeEnabled = true;
@@ -448,70 +490,252 @@ document.querySelectorAll('.toggle-section').forEach(toggleBtn => {
   });
 });
 
-// ===== Worker sidebar wiring (no template required) =====
-const wm = new WorkerManager();
+const workerManager = new WorkerManager();
 const workersList = document.getElementById('workersList');
 
-function renderWorkers(){
-  if (!workersList) return;
-  workersList.innerHTML = '';
+workerManager.onUpdate = () => {
+  const list = document.getElementById('workersList');
+  const tpl = document.getElementById('workerItemTpl');
+  if (!list) return;
+  list.innerHTML = '';
   workerRowElems.clear();
-  for (const w of wm.getWorkers()) {
-    const row = document.createElement('div');
-    row.className = 'flex items-center justify-between p-2 border rounded';
-    row.dataset.workerId = String(w.id);
-    row.dataset.workerName = w.name;
-
-    const left = document.createElement('div');
-    left.className = 'flex items-center gap-2';
-    const statusEl = document.createElement('span');
-    statusEl.className = 'status-dot status-ready';
-    statusEl.setAttribute('data-status','');
-    const nameEl = document.createElement('span');
-    nameEl.className = 'font-medium';
-    nameEl.setAttribute('data-name','');
-    nameEl.textContent = w.name;
-    left.appendChild(statusEl); left.appendChild(nameEl);
-
-    const metaEl = document.createElement('div');
-    metaEl.className = 'text-xs text-gray-500';
-    metaEl.setAttribute('data-meta','');
+  for (const w of workerManager.getWorkers()) {
+    let root, statusEl, metaEl;
+    if (tpl && tpl.content && tpl.content.firstElementChild) {
+      const clone = document.importNode(tpl.content, true);
+      root = clone.firstElementChild;
+      root.querySelector('[data-name]').textContent = w.name;
+      statusEl = root.querySelector('[data-status]');
+      metaEl = root.querySelector('[data-meta]');
+    } else {
+      root = document.createElement('div');
+      root.className = 'flex items-center justify-between p-2 border rounded';
+      const left = document.createElement('div');
+      left.className = 'flex items-center gap-2';
+      statusEl = document.createElement('span');
+      statusEl.className = 'status-dot status-ready';
+      statusEl.setAttribute('data-status','');
+      const nameEl = document.createElement('span');
+      nameEl.className = 'font-medium';
+      nameEl.setAttribute('data-name','');
+      nameEl.textContent = w.name;
+      left.appendChild(statusEl); left.appendChild(nameEl);
+      metaEl = document.createElement('div');
+      metaEl.className = 'text-xs text-gray-500';
+      metaEl.setAttribute('data-meta','');
+      root.appendChild(left); root.appendChild(metaEl);
+    }
+    root.dataset.workerId = String(w.id);
+    root.dataset.workerName = w.name;
+    statusEl.classList.remove('status-busy','status-error'); statusEl.classList.add('status-ready');
     metaEl.textContent = `mode:${w.mode||'sequential'} • delay:${w.delayMs??0}ms • batch:${w.batchSize??1}`;
-
-    row.appendChild(left);
-    row.appendChild(metaEl);
-
-    row.addEventListener('click', () => {
-      wm.select(w.id);
+    root.addEventListener('click', () => {
+      workerManager.select(w.id);
       enableStartAndClear(w.name);
-      syncFormFromWorker(w);
+      try { if (typeof syncFormFromWorker === 'function') syncFormFromWorker(w); } catch {}
     });
-
-    workersList.appendChild(row);
-    workerRowElems.set(w.id, { statusEl, metaEl, root: row });
+    list.appendChild(root);
+    workerRowElems.set(w.id, {statusEl, metaEl, root});
   }
-}
+};
 
-wm.setOnChange((selected) => {
-  if (selected) syncFormFromWorker(selected);
-  renderWorkers();
-  validateReady();
-});
+
 
 document.getElementById('addWorker')?.addEventListener('click', () => {
   const name = prompt("New Worker Name:");
-  const newWorker = wm.addWorker(name || undefined);
-  wm.select(newWorker.id);
-  renderWorkers();
+  const newWorker = workerManager.addWorker(name || undefined);
+  activeWorkerId = newWorker.id;
+  workerManager.onUpdate();
+});
+
+// === Auto-load config.json & DemoLibrary manifest ===
+document.addEventListener('DOMContentLoaded', async () => {
+  // DemoLibrary dropdown
+  const demoSel = document.getElementById('demoLibrarySelect');
+  const demoInfo = document.getElementById('demoLibraryInfo');
+  const fileInput = document.getElementById('logFile');
+  if (demoSel){
+    const manifest = await tryLoadJSON('DemoLibrary/manifest.json');
+    demoSel.innerHTML = '';
+    if (manifest && Array.isArray(manifest.files) && manifest.files.length){
+      const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='— choose demo file —';
+      demoSel.appendChild(opt0);
+      manifest.files.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.path; opt.textContent = f.name;
+        demoSel.appendChild(opt);
+      });
+      demoSel.onchange = async () => {
+        const v = demoSel.value;
+        if (v){
+          // disable upload and load file content
+          fileInput.disabled = true;
+          try{
+            const res = await fetch(v + '?_=' + Date.now()); const txt = await res.text();
+            window.__LOGSTREAMITY_DEMO__ = { path: v, content: txt };
+            PREPARED_LINES = prepareLinesFromText(txt);
+            demoInfo.textContent = `${v} loaded (${txt.split(/\r?\n/).filter(Boolean).length} lines)`;
+          }catch(e){
+            demoInfo.textContent = 'Failed to load demo file';
+          }
+        }else{
+          fileInput.disabled = false;
+          window.__LOGSTREAMITY_DEMO__ = null;
+          demoInfo.textContent = '';
+        }
+      };
+    } else {
+      const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='(no demo files found)';
+      demoSel.appendChild(opt0);
+    }
+  }
+
+  // config.json auto-load
+  const conf = await tryLoadJSON('config.json');
+  if (conf){
+    // endpoint & token
+    const endpointInput = document.getElementById('endpoint');
+    const tokenInput = document.getElementById('token');
+    if (conf.endpoint) endpointInput.value = conf.endpoint;
+    if (conf.token) tokenInput.value = conf.token;
+    // dark mode
+    const theme = (conf.global && conf.global.darkMode) || 'auto';
+    if (theme === 'dark') document.documentElement.setAttribute('data-theme','dark');
+    else if (theme === 'light') document.documentElement.setAttribute('data-theme','light');
+    else document.documentElement.removeAttribute('data-theme');
+    // workers preset (we use only first as default visible worker)
+    if (Array.isArray(conf.workers) && conf.workers.length){
+      const w = conf.workers[0];
+      // Populate UI fields
+      document.getElementById('delay').value = w.delayMs ?? 1000;
+      document.getElementById('lineVolume').value = w.batchSize ?? 1;
+      const modeId = `mode-${w.mode||'sequential'}`;
+      const mb = document.getElementById(modeId); if (mb) mb.click();
+      // attributes
+      if (w.attributes){
+        try {
+          localStorage.setItem('logstreamityAttrs', JSON.stringify(w.attributes));
+        } catch{}
+      }
+      // pre-load demo file if provided
+      if (w.file){
+        const demoSel = document.getElementById('demoLibrarySelect');
+        if (demoSel){
+          const opt = Array.from(demoSel.options).find(o => o.value === w.file);
+          if (opt){ demoSel.value = w.file; demoSel.dispatchEvent(new Event('change')); }
+        }
+      }
+    }
+    // remote control auto-enable?
+    const rct = document.getElementById('remoteControlToggle_removed');
+    if (conf.global && conf.global.remoteControl === true && rct){ rct.checked = true; }
+  }
+});
+
+
+// (remote control removed)
+
+function validateReady() {
+  const endpoint = document.getElementById('endpoint')?.value?.trim();
+  const token = document.getElementById('token')?.value?.trim();
+  const demo = window.__LOGSTREAMITY_DEMO__;
+  const fileInput = document.getElementById('logFile');
+  const hasLocalFile = fileInput?.files && fileInput.files.length > 0;
+  const hasPrepared = Array.isArray(PREPARED_LINES) && PREPARED_LINES.length > 0;
+  const ok = !!endpoint && !!token && (hasPrepared || demo || hasLocalFile);
+  const startBtn = document.getElementById('startBtn');
+  if (startBtn) startBtn.disabled = !ok;
+}
+
+
+
+async function loadDemoManifest() {
+  const sel = document.getElementById('demoLibrarySelect');
+  if (!sel) return;
+  try {
+    const res = await fetch('DemoLibrary/manifest.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    (data.files || []).forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f.path; opt.textContent = f.name;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+async function pickDemo(path) {
+  const fileInput = document.getElementById('logFile');
+  const info = document.getElementById('demoLibraryInfo');
+  if (!path) {
+    fileInput.disabled = false;
+    window.__LOGSTREAMITY_DEMO__ = null;
+    if (info) info.textContent = '';
+    validateReady();
+    return;
+  }
+  try {
+    const res = await fetch(path + '?_=' + Date.now());
+    const txt = await res.text();
+    window.__LOGSTREAMITY_DEMO__ = { path, content: txt };
+    fileInput.disabled = true;
+    if (info) {
+      const lines = txt.split(/\r?\n/).filter(Boolean).length;
+      info.textContent = `${path} loaded (${lines} lines)`;
+    }
+  } catch (e) {
+    if (info) info.textContent = 'Failed to load demo file';
+  }
+  validateReady();
+}
+
+
+const THEME_KEY = 'logstreamity.theme';
+function applyTheme(t) {
+  const root = document.documentElement;
+  if (t === 'dark') root.setAttribute('data-theme','dark');
+  else if (t === 'light') root.setAttribute('data-theme','light');
+  else root.removeAttribute('data-theme'); // auto
+  localStorage.setItem(THEME_KEY, t);
+  const toggle = document.getElementById('themeToggle');
+  if (toggle) {
+    toggle.setAttribute('aria-pressed', t === 'dark' ? 'true' : 'false');
+    toggle.textContent = t === 'dark' ? '☀️' : '🌙';
+  }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  applyTheme(localStorage.getItem(THEME_KEY) || 'auto');
+  const toggle = document.getElementById('themeToggle');
+  toggle?.addEventListener('click', () => {
+    const cur = localStorage.getItem(THEME_KEY) || 'auto';
+    const next = cur === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+  });
+});
+
+
+// ===== Worker sidebar wiring =====
+const wm = new WorkerManager('workersList');
+
+document.getElementById('addWorker')?.addEventListener('click', () => {
+  const name = prompt('Worker name:', 'logstreamity-' + (wm.getWorkers().length+1));
+  const w = wm.addWorker(name || undefined);
+  // seed form with this worker
+  syncFormFromWorker(w);
+});
+
+wm.setOnChange((selected) => {
+  if (selected) syncFormFromWorker(selected);
+  validateReady();
 });
 
 function syncFormFromWorker(w){
   if (!w) return;
+  // set mode buttons
   const ms = { sequential: 'mode-sequential', historic: 'mode-historic', scattered: 'mode-scattered' };
   const id = ms[w.mode] || 'mode-sequential';
   document.getElementById(id)?.click();
-  const d = document.getElementById('delay'); if (d) d.value = w.delayMs ?? 1000;
-  const v = document.getElementById('lineVolume'); if (v) v.value = w.batchSize ?? 1;
+  document.getElementById('delay')?.value = w.delayMs ?? 1000;
+  document.getElementById('lineVolume')?.value = w.batchSize ?? 1;
 }
 
 // Update worker from form controls
@@ -528,83 +752,3 @@ function syncFormFromWorker(w){
 document.getElementById('mode-sequential')?.addEventListener('click', () => wm.updateSelected({mode:'sequential'}));
 document.getElementById('mode-historic')?.addEventListener('click', () => wm.updateSelected({mode:'historic'}));
 document.getElementById('mode-scattered')?.addEventListener('click', () => wm.updateSelected({mode:'scattered'}));
-
-// ===== DemoLibrary Dropdown + config.json autoload =====
-document.addEventListener('DOMContentLoaded', async () => {
-  // DemoLibrary dropdown
-  const demoSel = document.getElementById('demoLibrarySelect');
-  const demoInfo = document.getElementById('demoLibraryInfo');
-  if (demoSel){
-    const manifest = await tryLoadJSON('DemoLibrary/manifest.json');
-    demoSel.innerHTML = '';
-    if (manifest && Array.isArray(manifest.files) && manifest.files.length){
-      const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='— choose demo file —';
-      demoSel.appendChild(opt0);
-      manifest.files.forEach(f => {
-        const opt = document.createElement('option');
-        opt.value = f.path; opt.textContent = f.name;
-        demoSel.appendChild(opt);
-      });
-      demoSel.onchange = async () => {
-        const v = demoSel.value;
-        if (v){
-          // disable upload and load file content
-          if (fileInput) fileInput.disabled = true;
-          try{
-            const res = await fetch(v + '?_=' + Date.now()); const txt = await res.text();
-            window.__LOGSTREAMITY_DEMO__ = { path: v, content: txt };
-            PREPARED_LINES = prepareLinesFromText(txt);
-            if (demoInfo) demoInfo.textContent = `${v} loaded (${txt.split(/\r?\n/).filter(Boolean).length} lines)`;
-          }catch(e){
-            if (demoInfo) demoInfo.textContent = 'Failed to load demo file';
-          }
-        }else{
-          if (fileInput) fileInput.disabled = false;
-          window.__LOGSTREAMITY_DEMO__ = null;
-          PREPARED_LINES = null;
-          if (demoInfo) demoInfo.textContent = '';
-        }
-        validateReady();
-      };
-    } else {
-      const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='(no demo files found)';
-      demoSel.appendChild(opt0);
-    }
-  }
-
-  // config.json auto-load
-  const conf = await tryLoadJSON('config.json');
-  if (conf){
-    if (conf.endpoint) endpointInput.value = conf.endpoint;
-    if (conf.token) tokenInput.value = conf.token;
-    const theme = (conf.global && conf.global.darkMode) || 'auto';
-    if (theme === 'dark') document.documentElement.setAttribute('data-theme','dark');
-    else if (theme === 'light') document.documentElement.setAttribute('data-theme','light');
-    else document.documentElement.removeAttribute('data-theme');
-
-    if (Array.isArray(conf.workers) && conf.workers.length){
-      // seed first worker into form
-      const w = conf.workers[0];
-      document.getElementById('delay').value = w.delayMs ?? 1000;
-      document.getElementById('lineVolume').value = w.batchSize ?? 1;
-      const modeId = `mode-${w.mode||'sequential'}`;
-      const mb = document.getElementById(modeId); if (mb) mb.click();
-      if (w.attributes){
-        try { localStorage.setItem('logstreamityAttrs', JSON.stringify(w.attributes)); } catch{}
-      }
-    }
-  }
-
-  renderWorkers();
-  validateReady();
-});
-
-// ===== Ready-state =====
-function validateReady() {
-  const endpoint = document.getElementById('endpoint')?.value?.trim();
-  const token = document.getElementById('token')?.value?.trim();
-  const hasPrepared = Array.isArray(PREPARED_LINES) && PREPARED_LINES.length > 0;
-  const hasLocalFile = fileInput?.files && fileInput.files.length > 0;
-  const ok = !!endpoint && !!token && (hasPrepared || hasLocalFile);
-  if (startBtn) startBtn.disabled = !ok;
-}
