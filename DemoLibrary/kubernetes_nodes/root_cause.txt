@@ -1,0 +1,2 @@
+Primärursache: Zu viele Pods + Leaks -> MemoryPressure & DiskUsage auf Node ip-10-0-12-34.
+Folgen: CNI-Neustarts -> Pod-Ready-Probleme, Evictions, Scheduling-Failures.

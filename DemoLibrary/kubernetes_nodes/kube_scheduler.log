@@ -1,0 +1,2 @@
+lvl=WARN comp=scheduler reason=Unschedulable pod=orders-5f678 priority=0 msg="0/5 nodes are available: 1 Insufficient cpu, 2 node(s) had taint {node.kubernetes.io/unreachable: }, that the pod didn't tolerate, 2 node(s) did not match node selector."
+lvl=INFO comp=scheduler pod=orders-5f678 preemption=true victims=payments-7bbccd9b6d-xtkjn msg="preempting lower-priority pod to schedule critical workload"

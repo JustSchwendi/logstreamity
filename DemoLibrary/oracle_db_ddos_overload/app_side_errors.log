@@ -1,0 +1,2 @@
+service=checkout db=oracle action=connect status=ERROR error=ORA-12516 msg="TNS:listener could not find available handler with matching protocol stack" pool=HikariCP acquireTimeoutMs=30000
+service=checkout db=oracle action=query status=TIMEOUT sql="SELECT * FROM orders WHERE id=..." msg="query timeout due to resource starvation"

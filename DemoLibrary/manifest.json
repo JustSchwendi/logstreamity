@@ -1,19 +1,39 @@
 {
   "files": [
     {
-      "name": "Disk_write_errors_causing_CPU_spike",
+      "name": "Disk write errors causing CPU spike",
       "path": "DemoLibrary/Disk_write_errors_causing_CPU_spike.txt"
     },
     {
-      "name": "F5_Kernel_Panic_at_boot_no_SNMP",
+      "name": "kubelet full disk and memory leak cause crash",
+      "path": "kubelet_full_disk_and_memory_leak_crash.txt"
+    },
+    {
+      "name": "AWS Lambda secret error and coldstarts",
+      "path": "aws_lambda_secrets_coldstart.txt"
+    },
+    {
+      "name": "Azure Function coldstarts",
+      "path": "azure_function_coldstart.txt"
+    },
+    {
+      "name": "Oracle DB under DDoS and overload",
+      "path": "oracle_db_ddos_and_overload.txt"
+    },
+    {
+      "name": "Oracle DB FRA full and deadlocks",
+      "path": "oracle_db_errors.txt"
+    },
+    {
+      "name": "F5 Kernel Panic at boot, no SNMP signals yet",
       "path": "DemoLibrary/F5_Kernel_Panic_at_boot_no_SNMP.txt"
     },
     {
-      "name": "IDS_detectes_heartbleed",
+      "name": "IDS detectes heartbleed bug attack",
       "path": "DemoLibrary/IDS_detectes_heartbleed.txt"
     },
     {
-      "name": "TCP_host_group_closed_port_OUTAGE",
+      "name": "TCP host group closed port causes OUTAGE",
       "path": "DemoLibrary/TCP_host_group_closed_port_OUTAGE.txt"
     }
   ]

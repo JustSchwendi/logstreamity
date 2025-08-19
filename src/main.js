@@ -413,11 +413,13 @@ if (mode === 'scattered') {
     };
   }
 }
+
+    const attrs = (selectedAttributes instanceof Map) ? Object.fromEntries(selectedAttributes) : (selectedAttributes && typeof selectedAttributes === 'object') ? { ...selectedAttributes } : {};
 const ok = await startWorkersPool(
     (hasPrepared ? PREPARED_LINES : logLines),
     endpoint,
     token,
-    { mode, delay: baseDelay, volume: baseVolume, randomize: randomizeEnabled, attributes: Object.fromEntries(selectedAttributes), loop: loopEnabled, historicStartMs, scattered },
+    { mode, delay: baseDelay, volume: baseVolume, randomize: randomizeEnabled, attributes: attrs, loop: loopEnabled, historicStartMs, scattered },
     wm
   );
   startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true;

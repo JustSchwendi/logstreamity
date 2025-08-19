@@ -1,0 +1,2 @@
+component=listener backlog=2048 reached=true dropped=312 status=CRIT msg="listener queue overflow"
+component=listener SYN=high RST=spike src=0.0.0.0/0 note="possible L7 flood via app gateway"

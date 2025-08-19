@@ -1,0 +1,20 @@
+host=DB1 db=ORCL severity=ERROR code=ORA-16014 msg="log 3 sequence# 912 not archived, no available destinations"
+host=DB1 db=ORCL severity=ERROR code=ORA-19809 msg="limit exceeded for recovery files" recoveryAreaUsed=99% recoveryAreaLimit=200GB
+host=DB1 db=ORCL severity=WARN  code=ORA-00060 msg="deadlock detected while waiting for resource" sid=1722 obj=EMP_LOCKS
+host=DB1 db=ORCL severity=ERROR code=ORA-12514 msg="TNS:listener does not currently know of service requested in connect descriptor" listener=LISTENER
+host=DB1 db=ORCL severity=INFO  code=ARC0 msg="archiver stuck. CONNECT INTERNAL only, until freed."
+host=DB1 db=ORCL severity=ERROR code=ORA-16014 msg="log 3 sequence# 912 not archived, no available destinations"
+host=DB1 db=ORCL severity=ERROR code=ORA-19809 msg="limit exceeded for recovery files" recoveryAreaUsed=99% recoveryAreaLimit=200GB
+host=DB1 db=ORCL severity=WARN  code=ORA-00060 msg="deadlock detected while waiting for resource" sid=1722 obj=EMP_LOCKS
+host=DB1 db=ORCL severity=ERROR code=ORA-12514 msg="TNS:listener does not currently know of service requested in connect descriptor" listener=LISTENER
+host=DB1 db=ORCL severity=INFO  code=ARC0 msg="archiver stuck. CONNECT INTERNAL only, until freed."
+host=DB1 db=ORCL severity=ERROR code=ORA-16014 msg="log 3 sequence# 912 not archived, no available destinations"
+host=DB1 db=ORCL severity=ERROR code=ORA-19809 msg="limit exceeded for recovery files" recoveryAreaUsed=99% recoveryAreaLimit=200GB
+host=DB1 db=ORCL severity=WARN  code=ORA-00060 msg="deadlock detected while waiting for resource" sid=1722 obj=EMP_LOCKS
+host=DB1 db=ORCL severity=ERROR code=ORA-12514 msg="TNS:listener does not currently know of service requested in connect descriptor" listener=LISTENER
+host=DB1 db=ORCL severity=INFO  code=ARC0 msg="archiver stuck. CONNECT INTERNAL only, until freed."
+host=DB1 db=ORCL severity=ERROR code=ORA-16014 msg="log 3 sequence# 912 not archived, no available destinations"
+host=DB1 db=ORCL severity=ERROR code=ORA-19809 msg="limit exceeded for recovery files" recoveryAreaUsed=99% recoveryAreaLimit=200GB
+host=DB1 db=ORCL severity=WARN  code=ORA-00060 msg="deadlock detected while waiting for resource" sid=1722 obj=EMP_LOCKS
+host=DB1 db=ORCL severity=ERROR code=ORA-12514 msg="TNS:listener does not currently know of service requested in connect descriptor" listener=LISTENER
+host=DB1 db=ORCL severity=INFO  code=ARC0 msg="archiver stuck. CONNECT INTERNAL only, until freed."

@@ -1,0 +1,2 @@
+component=listener name=LISTENER event=REGISTER service=ORCL1 status=FAILED reason="SERVICE_NAME mismatch"
+component=listener name=LISTENER event=CONNECT client=app@payments status=REJECTED error=ORA-12514

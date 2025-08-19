@@ -1,0 +1,3 @@
+metric=node_filesystem_usage device=/var/lib/kubelet usage=92.1% mount=/var/lib/kubelet msg="disk nearly full"
+metric=node_memory_Active_anon value=15.8Gi node=ip-10-0-12-34 msg="high anonymous memory"
+metric=node_cpu seconds_total=7195 mode=system cpu=0

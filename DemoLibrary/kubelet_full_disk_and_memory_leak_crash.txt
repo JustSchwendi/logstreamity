@@ -1,0 +1,6 @@
+lvl=ERROR comp=kubelet node=ip-10-0-12-34 reason=ImageGCFailed freed=0MiB threshold=85% diskUsage=92% msg="image garbage collection failed"
+lvl=WARN  comp=kubelet node=ip-10-0-12-34 condition=MemoryPressure status=True msg="node has memory pressure"
+lvl=INFO  comp=kubelet node=ip-10-0-12-34 eviction=Hard threshold="memory.available<500Mi" podsEvicted=3 msg="evicted pods due to memory pressure"
+lvl=ERROR comp=kubelet node=ip-10-0-12-34 pod=payments-7bbccd9b6d-xtkjn container=sidecar readinessProbe=failureCount=5 msg="container not ready"
+lvl=ERROR comp=kubelet node=ip-10-0-12-34 cni=calico action=restart count=4 reason="crashloop in CNI plugin" msg="network plugin crashed"
+lvl=WARN  comp=kubelet node=ip-10-0-12-34 podsRunning=101 capacity=100 msg="exceeded configured pods per node"

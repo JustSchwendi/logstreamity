@@ -1,0 +1,2 @@
+Primärursache: Secret/KMS-Fehler + Cold-Start-Spitzen; zusätzlich Timeout wegen langsamer DB.
+Empfehlung: Provisioned Concurrency, Secrets-Validation vor Rollout, dynamische Timeouts & Retries.

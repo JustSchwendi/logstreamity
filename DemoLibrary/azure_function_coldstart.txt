@@ -1,0 +1,3 @@
+platform=azure service=functions app=invoice-processor invocationId=1a2b coldStart=true runtime=dotnet memory=256MB msg="cold start observed"
+platform=azure service=functions app=invoice-processor invocationId=1a2c dependency=sql action=ExecuteNonQuery error=LoginFailed user=func-app msg="SQL authentication failed"
+platform=azure service=functions app=invoice-processor invocationId=1a2d dependency=redis action=GET latencyMs=2100 cache=miss msg="cache backplane slow"

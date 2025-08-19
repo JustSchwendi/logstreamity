@@ -1,0 +1,4 @@
+host=ora01 db=ORCL metric=session_logons_per_second value=950 threshold=200 status=ALERT msg="spike in logons"
+host=ora01 db=ORCL metric=active_sessions value=1200 cpu_count=32 runqueue=48 status=CRIT msg="CPU saturated"
+host=ora01 db=ORCL metric=library_cache_hit_ratio value=72% status=WARN msg="parse storm"
+host=ora01 db=ORCL event="enq: TX - row lock contention" waitMs=1800 sessions=340 msg="hot rows"

@@ -1,0 +1,2 @@
+Primärursache: FRA voll (ORA-19809/16014) -> Archiver hängt, neue Redo-Logs werden nicht archiviert.
+Nebenwirkungen: Verbindungsprobleme (ORA-12514), Deadlocks in Applikation.

@@ -1,0 +1,2 @@
+Primärursache: Verbindungsflut (möglicher DDoS bzw. fehlerhafte Pool-Konfiguration) -> Listener-Backlog + CPU-Sättigung.
+Empfehlung: Connection rate limiting, proper pooling, firewall/L7-WAF, fail-open Caches.
