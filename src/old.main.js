@@ -400,7 +400,7 @@ startBtn?.addEventListener('click', async () => {
     { mode, delay: baseDelay, volume: baseVolume, randomize: randomizeEnabled, attributes: Object.fromEntries(selectedAttributes) },
     wm
   );
-  startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = false;
+  startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true;
   setDot(ok ? 'ready' : 'error');
 });
 
@@ -408,7 +408,7 @@ stopBtn?.addEventListener('click', () => {
   const workers = Array.from(activeWorkers);
   if (!workers.length) {
     logStatus('Nothing to stop.');
-    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = false;
+    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true;
     setDot('ready');
     return;
   }
@@ -417,7 +417,7 @@ stopBtn?.addEventListener('click', () => {
   setTimeout(() => {
     for (const w of Array.from(activeWorkers)) { try { w.terminate(); } catch {} activeWorkers.delete(w); }
     logStatus('Stopped.');
-    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = false;
+    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true;
     setDot('ready');
   }, 2000);
 });
@@ -474,7 +474,6 @@ async function startWorkersPool(lines, endpoint, token, uiOptions, workerManager
       randomize: !!(wCfg.randomize ?? uiOptions.randomize),
       attributes: wCfg.attributes || uiOptions.attributes,
       rateLimitPerSecond: 90,
-      loop: loopEnabled,
       loop: loopEnabled
     };
     running++;
