@@ -1,0 +1,1 @@
+npx http-server . -p 8080 -a 127.0.0.1 -c-1 --cors -o

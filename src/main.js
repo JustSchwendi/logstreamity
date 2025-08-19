@@ -393,14 +393,34 @@ startBtn?.addEventListener('click', async () => {
   setDot('busy');
   startBtn.disabled = true; stopBtn.disabled = false; loopBtn.disabled = false; currentLineIndex = 0;
 
-  const ok = await startWorkersPool(
+  // --- collect time options for historic & scattered modes ---
+const historicInput = document.getElementById('historic-timestamp');
+const historicStartMs = (mode === 'historic' && historicInput && historicInput.value)
+  ? new Date(historicInput.value).getTime()
+  : undefined;
+
+let scattered = undefined;
+if (mode === 'scattered') {
+  const sv = document.getElementById('scattered-start')?.value?.trim();
+  const ev = document.getElementById('scattered-end')?.value?.trim();
+  const cvRaw = document.getElementById('scattered-chunks')?.value;
+  const cv = parseInt(cvRaw ?? '10', 10);
+  if (sv && ev) {
+    scattered = {
+      startMs: new Date(sv).getTime(),
+      endMs: new Date(ev).getTime(),
+      chunks: Math.max(1, isFinite(cv) ? cv : 10)
+    };
+  }
+}
+const ok = await startWorkersPool(
     (hasPrepared ? PREPARED_LINES : logLines),
     endpoint,
     token,
-    { mode, delay: baseDelay, volume: baseVolume, randomize: randomizeEnabled, attributes: Object.fromEntries(selectedAttributes) },
+    { mode, delay: baseDelay, volume: baseVolume, randomize: randomizeEnabled, attributes: Object.fromEntries(selectedAttributes), loop: loopEnabled, historicStartMs, scattered },
     wm
   );
-  startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = false;
+  startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true;
   setDot(ok ? 'ready' : 'error');
 });
 
@@ -408,7 +428,7 @@ stopBtn?.addEventListener('click', () => {
   const workers = Array.from(activeWorkers);
   if (!workers.length) {
     logStatus('Nothing to stop.');
-    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = false;
+    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true;
     setDot('ready');
     return;
   }
@@ -417,7 +437,7 @@ stopBtn?.addEventListener('click', () => {
   setTimeout(() => {
     for (const w of Array.from(activeWorkers)) { try { w.terminate(); } catch {} activeWorkers.delete(w); }
     logStatus('Stopped.');
-    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = false;
+    startBtn.disabled = false; stopBtn.disabled = true; loopBtn.disabled = true;
     setDot('ready');
   }, 2000);
 });
@@ -474,7 +494,9 @@ async function startWorkersPool(lines, endpoint, token, uiOptions, workerManager
       randomize: !!(wCfg.randomize ?? uiOptions.randomize),
       attributes: wCfg.attributes || uiOptions.attributes,
       rateLimitPerSecond: 90,
-      loop: loopEnabled,
+      historicStartMs: (uiOptions && uiOptions.historicStartMs) || undefined,
+      scattered: (uiOptions && uiOptions.scattered) || undefined,
+      
       loop: loopEnabled
     };
     running++;

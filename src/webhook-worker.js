@@ -1,4 +1,5 @@
-// src/webhook-worker.js — dynamic loop control (SET_LOOP), no DONE while loop is active
+// src/webhook-worker.js — dynamic SET_LOOP + historic/scattered
+
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 class RateLimiter{ constructor(rps){ this.capacity=Math.max(1,Number(rps||90)); this.tokens=this.capacity; this._t=setInterval(()=>{ this.tokens=Math.min(this.capacity,this.tokens+this.capacity); },1000);} async take(n=1){ n=Math.max(1,n|0); while(this.tokens<n){ await sleep(10); if(cancelled) throw new Error("cancelled"); } this.tokens-=n; } stop(){ try{clearInterval(this._t);}catch{} } }
 function normalizeEndpoint(input){ if(!input) return ""; let s=String(input).trim(); if(!/^https?:\/\//i.test(s)) s="https://"+s; let u; try{u=new URL(s);}catch{return s;} u.hostname=u.hostname.replace(/\.apps\./i,"."); u.pathname="/api/v2/logs/ingest"; u.search=""; u.hash=""; return u.toString(); }
@@ -32,11 +33,7 @@ function makeScheduler(delayMs,batchSize,baseTime){ const step=Math.max(0,Math.f
 
 self.onmessage = async (event)=>{
   const { type } = event.data || {};
-  if(type==="SET_LOOP"){
-    loopActive = !!event.data.value;
-    self.postMessage({ type:"INFO", message:`loop=${loopActive}` });
-    return;
-  }
+  if(type==="SET_LOOP"){ loopActive=!!event.data.value; self.postMessage({type:"INFO", message:`loop=${loopActive}`}); return; }
   if(type==="STOP"){ cancelled=true; abortInFlight(); return; }
   if(type!=="START_INGEST"){ self.postMessage({type:"INFO", message:"Unknown command"}); return; }
 
@@ -49,7 +46,9 @@ self.onmessage = async (event)=>{
   const batchSize= Number(config.batchSize||1);
   const userAttrs= config.attributes || {};
   const rps      = Number(config.rateLimitPerSecond||90);
-  loopActive     = !!config.loop; // seed current loop state from config
+  loopActive     = !!config.loop;
+  const historicStartMs = Number(config.historicStartMs || 0) || null;
+  const scattered = (config.scattered && typeof config.scattered === 'object') ? config.scattered : null;
   const limiter  = new RateLimiter(rps);
   const sourceId = (Math.random().toString(16).slice(2) + Date.now().toString(16));
   let seq=0, cycle=0;
@@ -79,42 +78,83 @@ self.onmessage = async (event)=>{
   };
 
   const runScheduledOnce = async ()=>{
-    const base=Date.now(); const nextTs=makeScheduler(delayMs,batchSize,base);
-    const prepared=[];
-    for(let i=0;i<total;i++){ const item=lines[i]; const s=getLineContent(item); if(!s) continue; const ts=nextTs(); const derivedLvl=getDerivedLevel(item); prepared.push({s,ts,derivedLvl}); }
-    for(let k=0;k<prepared.length;k++){
-      if(cancelled) return false;
-      const {s,ts,derivedLvl}=prepared[k];
-      const rec={ content:s, timestamp:ts, ...userAttrs, source_id:sourceId, seq_no:seq++, worker:(workerInfo&&workerInfo.name)||"logstreamity" };
-      if(!userHasSev){ const lvl=derivedLvl||parseSeverityFromLine(s); if(lvl) rec.loglevel=lvl; }
-      const rs=await sendRec(rec); if(!rs.ok){ if(rs.cancelled) return false; self.postMessage({type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}`}); return false; }
-      if((seq % 50)===0) self.postMessage({ type:"PROGRESS", progress: Math.round((seq/total)*100) });
-      if((seq % 500)===0) await sleep(1);
+    if (mode === 'historic' && historicStartMs) {
+      const nextTs = makeScheduler(delayMs, batchSize, historicStartMs);
+      for (let i = 0; i < total; i++) {
+        if (cancelled) return false;
+        const item = lines[i];
+        const s = getLineContent(item); if (!s) continue;
+        const ts = nextTs();
+        const derivedLvl = getDerivedLevel(item);
+        const rec = { content:s, timestamp:ts, ...userAttrs, source_id:sourceId, seq_no:seq++, worker:(workerInfo&&workerInfo.name)||"logstreamity" };
+        if (!userHasSev){ const lvl = derivedLvl || parseSeverityFromLine(s); if (lvl) rec.loglevel = lvl; }
+        const rs = await sendRec(rec); if (!rs.ok){ if (rs.cancelled) return false; self.postMessage({type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}`}); return false; }
+        if ((seq % 50)===0) self.postMessage({ type:"PROGRESS", progress: Math.round((seq/total)*100) });
+      }
+      return true;
+    }
+
+    if (mode === 'scattered' && scattered && scattered.startMs && scattered.endMs) {
+      const start = Number(scattered.startMs);
+      const end   = Number(scattered.endMs);
+      const duration = Math.max(0, end - start);
+      const n = total || 1;
+      const chunks = Math.max(1, Number(scattered.chunks || 1));
+      const chunkSize = Math.ceil(n / chunks);
+
+      for (let i = 0; i < n; i++) {
+        if (cancelled) return false;
+        const item = lines[i];
+        const s = getLineContent(item); if (!s) continue;
+
+        let ts = start + Math.floor(duration * (i / Math.max(1, n - 1)));
+        if (chunks > 1) {
+          const chunkIndex = Math.floor(i / chunkSize);
+          const chunkStart = start + Math.floor(duration * (chunkIndex / chunks));
+          const chunkEnd   = start + Math.floor(duration * ((chunkIndex + 1) / chunks));
+          const posInChunk = i - (chunkIndex * chunkSize);
+          const denom = Math.max(1, chunkSize - 1);
+          ts = chunkStart + Math.floor((chunkEnd - chunkStart) * (posInChunk / denom));
+          if (config.randomize) {
+            const jitter = Math.floor((chunkEnd - chunkStart) * 0.05);
+            ts += Math.floor(Math.random() * (2 * jitter + 1)) - jitter;
+          }
+        }
+
+        const derivedLvl = getDerivedLevel(item);
+        const rec = { content:s, timestamp:ts, ...userAttrs, source_id:sourceId, seq_no:seq++, worker:(workerInfo&&workerInfo.name)||"logstreamity" };
+        if (!userHasSev){ const lvl = derivedLvl || parseSeverityFromLine(s); if (lvl) rec.loglevel = lvl; }
+        const rs = await sendRec(rec); if (!rs.ok){ if (rs.cancelled) return false; self.postMessage({type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}`}); return false; }
+        if ((seq % 50)===0) self.postMessage({ type:"PROGRESS", progress: Math.round((seq/total)*100) });
+        if ((seq % 500)===0) await sleep(1);
+      }
+      return true;
+    }
+
+    const base = Date.now();
+    const nextTs = makeScheduler(delayMs, batchSize, base);
+    for (let i = 0; i < total; i++) {
+      if (cancelled) return false;
+      const item = lines[i];
+      const s = getLineContent(item); if (!s) continue;
+      const ts = nextTs();
+      const derivedLvl = getDerivedLevel(item);
+      const rec = { content:s, timestamp:ts, ...userAttrs, source_id:sourceId, seq_no:seq++, worker:(workerInfo&&workerInfo.name)||"logstreamity" };
+      if (!userHasSev){ const lvl = derivedLvl || parseSeverityFromLine(s); if (lvl) rec.loglevel = lvl; }
+      const rs = await sendRec(rec); if (!rs.ok){ if (rs.cancelled) return false; self.postMessage({type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}`}); return false; }
+      if ((seq % 50)===0) self.postMessage({ type:"PROGRESS", progress: Math.round((seq/total)*100) });
+      if ((seq % 500)===0) await sleep(1);
     }
     return true;
   };
 
   try{
     if(mode==="sequential"){
-      do {
-        self.postMessage({type:"PROGRESS", progress:0});
-        const ok=await runSequentialOnce();
-        if(!ok || cancelled) break;
-        cycle++;
-        if(loopActive) self.postMessage({type:"CYCLE", cycle});
-      } while(loopActive && !cancelled);
-      if(cancelled) return finish('cancel');
-      return loopActive ? undefined : finish('done');
+      do{ self.postMessage({type:"PROGRESS", progress:0}); const ok=await runSequentialOnce(); if(!ok || cancelled) break; cycle++; if(loopActive) self.postMessage({type:"CYCLE", cycle}); } while(loopActive && !cancelled);
+      if(cancelled) return finish('cancel'); return loopActive ? undefined : finish('done');
     } else {
-      do {
-        self.postMessage({type:"PROGRESS", progress:0});
-        const ok=await runScheduledOnce();
-        if(!ok || cancelled) break;
-        cycle++;
-        if(loopActive) self.postMessage({type:"CYCLE", cycle});
-      } while(loopActive && !cancelled);
-      if(cancelled) return finish('cancel');
-      return loopActive ? undefined : finish('done');
+      do{ self.postMessage({type:"PROGRESS", progress:0}); const ok=await runScheduledOnce(); if(!ok || cancelled) break; cycle++; if(loopActive) self.postMessage({type:"CYCLE", cycle}); } while(loopActive && !cancelled);
+      if(cancelled) return finish('cancel'); return loopActive ? undefined : finish('done');
     }
   }catch(e){
     if(String(e).includes('cancelled')) return finish('cancel');
