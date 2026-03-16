@@ -144,6 +144,17 @@
 </select>
 <div class="text-xs text-gray-500 mt-1" id="demoLibraryInfo"></div>
 </div>
+<!-- GeoSCADA Generator -->
+<div class="mt-4 border-t pt-4">
+<label class="block text-sm font-medium text-gray-700">Or generate GeoSCADA logs</label>
+<p class="text-xs text-gray-500 mb-2">Produces synthetic EcoStruxure Geo SCADA Expert log lines weighted by real-world prevalence (TRANS, SVR, SVRADVISE, LUS, STBY, LOGIC, DATAFILE, SNAPSHOT families).</p>
+<div class="flex items-center gap-2">
+<input class="rounded-md shadow-sm w-32" id="geoscadaCount" max="50000" min="10" type="number" value="500"/>
+<span class="text-sm text-gray-500">events</span>
+<button class="btn-secondary" id="generateGeoScada">Generate</button>
+</div>
+<div class="text-xs text-gray-500 mt-1" id="geoscadaInfo"></div>
+</div>
 </div>
 <p class="text-lg font-bold text-dynatrace-primary" id="file-status">No file selected.</p>
 <div class="mt-4">

@@ -5,6 +5,7 @@ import { updateLabels, updateAttributeList } from './ui.js';
 import { loadAttributes, saveAttributes, loadAttributesFromFile } from './attributes.js';
 import { processEndpointUrl } from './ingest.js';
 import { WorkerManager } from './worker.js';
+import { generateGeoScadaLines } from './modules/geoscada-generator.js';
 
 // ===== Globals & DOM refs =====
 const endpointInput = document.getElementById('endpoint');
@@ -522,3 +523,19 @@ function validateReady() {
 // Re-validate on input changes
 endpointInput?.addEventListener('input', validateReady);
 tokenInput?.addEventListener('input', validateReady);
+
+// ===== GeoSCADA Generator =====
+document.getElementById('generateGeoScada')?.addEventListener('click', () => {
+  const count = parseInt(document.getElementById('geoscadaCount')?.value || '500', 10);
+  const lines = generateGeoScadaLines(count);
+  PREPARED_LINES = prepareLinesFromText(lines.join('\n'));
+  logLines = lines;
+  const info = document.getElementById('geoscadaInfo');
+  if (info) info.textContent = `${lines.length} lines generated (${count} events).`;
+  if (fileStatus) fileStatus.textContent = `${lines.length} GeoSCADA log lines ready.`;
+  if (fileInput) fileInput.disabled = true;
+  const demoSel = document.getElementById('demoLibrarySelect');
+  if (demoSel) demoSel.value = '';
+  injectAttributesBtn?.removeAttribute('disabled');
+  validateReady();
+});
