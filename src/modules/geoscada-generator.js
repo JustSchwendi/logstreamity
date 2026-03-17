@@ -2,7 +2,7 @@
 // Synthetic GeoSCADA log generator based on geoscada_log_content_reference.yaml
 
 export const GENERATOR_INFO = {
-  label: "GeoSCADA Expert DB Logs",
+  label: "Operational Technology (OT) - Geo SCADA Expert DB Logs",
   description: "Generates synthetic EcoStruxure Geo SCADA Expert database log lines weighted by real-world event prevalence. Covers TRANS, SVR, SVRADVISE, LUS, STBY, LOGIC, DATAFILE, and SNAPSHOT event families from Operational Technology (OT) environments — ideal for testing OT/ICS observability pipelines in Dynatrace.",
   badge: "Operational Technology",
   badgeColor: "bg-blue-100 text-blue-700"

@@ -35,7 +35,7 @@ Logstreamity is a **purely client-side** web app for testing and demonstrating l
   Quickly try the tool using built-in sample log files.
 - **Synthetic Log Generators**
   Generate realistic log data on demand without needing a real source system. Choose a generator type from the dropdown in Step 2 — each one shows a description and badge so you know exactly what kind of data it produces:
-  - **GeoSCADA Expert DB Logs** *(Operational Technology)* — synthetic EcoStruxure Geo SCADA Expert database log lines weighted by real-world event prevalence. Covers TRANS, SVR, SVRADVISE, LUS, STBY, LOGIC, DATAFILE, and SNAPSHOT event families.
+  - **Operational Technology (OT) - Geo SCADA Expert DB Logs** — synthetic EcoStruxure Geo SCADA Expert database log lines weighted by real-world event prevalence. Covers TRANS, SVR, SVRADVISE, LUS, STBY, LOGIC, DATAFILE, and SNAPSHOT event families.
   - **Ecommerce Logs (Unmasked Emails)** *(PII / Security)* — simulates a Java-based ecommerce platform (authentication, checkout, loyalty, account management). Log lines contain unmasked `@example.com` email addresses — useful for testing PII detection, log masking, and data privacy workflows in Dynatrace.
 - **Resilient delivery**  
   Client-side token-bucket rate limiter; 429/5xx retry with exponential backoff and `Retry-After` support.
@@ -140,7 +140,7 @@ This project is plain HTML/CSS/ES modules—no build step required.
 /style.css, /template.css
 /src/*.js              (main, ui, ingest, worker, attributes)
 /src/modules/          (synthetic log generators)
-  geoscada-generator.js        — GeoSCADA Expert OT logs
+  geoscada-generator.js        — Operational Technology (OT) - Geo SCADA Expert DB logs
   ecommerce-email-generator.js — Ecommerce logs with unmasked email addresses
 /DemoLibrary/          (static sample log files)
 /service-worker.js
