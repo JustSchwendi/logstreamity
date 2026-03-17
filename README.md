@@ -4,7 +4,7 @@
 
 Logstreamity is a **purely client-side** web app for testing and demonstrating log ingestion into **Dynatrace Logs API v2**—directly from your browser. Load any line-based log file (TXT/LOG/JSON/XML lines), optionally inject attributes, choose a timestamp strategy, and stream logs in real time or at high speed. No servers. No storage. Just the browser doing the work.
 
-- **Live Hosted on GitHub Pages:** https://justschwendi.github.io/logstreamity/  
+- **Live Hosted on GitHub Pages:** https://justschwendi.github.io/logstreamity/
 - **Host Offline by Git-Cloning:** https://github.com/JustSchwendi/logstreamity
 
 ---
@@ -30,8 +30,12 @@ Logstreamity is a **purely client-side** web app for testing and demonstrating l
 - **Attribute injection & persistence**  
   Add custom attributes (e.g., `source_id`, `seq_no`, `worker`). Export/import attribute sets from a file. Basic severity detection adds a derived `loglevel` when possible.
   If you define loglevels or timestamps here, this will override parsing and processing capabilities of other features!
-- **Demo Library**  
+- **Demo Library**
   Quickly try the tool using built-in sample log files.
+- **Synthetic Log Generators**
+  Generate realistic log data on demand without needing a real source system. Choose a generator type from the dropdown in Step 2 — each one shows a description and badge so you know exactly what kind of data it produces:
+  - **Operational Technology (OT) - Geo SCADA Expert DB Logs** — synthetic EcoStruxure Geo SCADA Expert database log lines weighted by real-world event prevalence. Covers TRANS, SVR, SVRADVISE, LUS, STBY, LOGIC, DATAFILE, and SNAPSHOT event families.
+  - **Ecommerce Logs (Unmasked Emails)** *(PII / Security)* — simulates a Java-based ecommerce platform (authentication, checkout, loyalty, account management). Log lines contain unmasked `@example.com` email addresses — useful for testing PII detection, log masking, and data privacy workflows in Dynatrace.
 - **Resilient delivery**  
   Client-side token-bucket rate limiter; 429/5xx retry with exponential backoff and `Retry-After` support.
 - **Helpful Status indicators**  
@@ -81,6 +85,10 @@ Then open: `http://localhost:3000` (or `:8080`, depending on your command).
 2. **Pick your input**
    - **Upload** any line-based file (TXT/LOG/JSON lines/XML lines).
    - Or choose a sample from **Demo Library** (disables file upload while selected).
+   - Or **generate synthetic logs** using the generator dropdown:
+     - Select a generator type to see its description and badge.
+     - **Ecommerce Logs** additionally previews the sample email addresses that will appear in the generated data.
+     - Set the number of events and click **Generate** — the lines are held in memory and ready to ingest.
 
 3. **Attributes (optional)**
    - Click **Inject Attributes** to show the attribute panel.
@@ -115,7 +123,7 @@ Then open: `http://localhost:3000` (or `:8080`, depending on your command).
 ## Roadmap / ideas
 
 - Multi-worker fully functional
-- More sample datasets
+- More synthetic log generators (network devices, cloud-native, SIEM, etc.)
 - Enriched parsing helpers
 
 *(PRs welcome!)*
@@ -129,10 +137,21 @@ This project is plain HTML/CSS/ES modules—no build step required.
 ```
 /index.html
 /style.css, /template.css
-/src/*.js (main, ui, ingest, worker, attributes, modules/*)
-/DemoLibrary (sample data)
+/src/*.js              (main, ui, ingest, worker, attributes)
+/src/modules/          (synthetic log generators)
+  geoscada-generator.js        — Operational Technology (OT) - Geo SCADA Expert DB logs
+  ecommerce-email-generator.js — Ecommerce logs with unmasked email addresses
+/DemoLibrary/          (static sample log files)
 /service-worker.js
 ```
+
+### Adding a new synthetic log generator
+
+1. Create `src/modules/your-generator.js` and export:
+   - `generateYourLines(count)` — returns an array of log line strings.
+   - `GENERATOR_INFO` — `{ label, description, badge, badgeColor }` for the UI panel.
+2. Import it in `src/main.js` and add one entry to the `GENERATORS` map.
+3. Add one `<option value="your-key">` in the `#generatorSelect` dropdown in `index.html`.
 
 Serve the folder with any static server (see **Quick start**).
 

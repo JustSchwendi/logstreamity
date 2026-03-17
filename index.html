@@ -144,6 +144,44 @@
 </select>
 <div class="text-xs text-gray-500 mt-1" id="demoLibraryInfo"></div>
 </div>
+<!-- Log Generator -->
+<div class="mt-4 border-t pt-4">
+<label class="block text-sm font-medium text-gray-700" for="generatorSelect">Or generate synthetic logs</label>
+<select class="mt-1 block w-full border p-2 rounded" id="generatorSelect">
+<option value="">— choose a generator —</option>
+<option value="geoscada">Operational Technology (OT) - Geo SCADA Expert DB Logs</option>
+<option value="ecommerce-email">Ecommerce Logs (Unmasked Emails)</option>
+</select>
+
+<!-- Description panel -->
+<div class="hidden mt-3 rounded-lg border p-4" id="generator-desc-panel">
+<div class="flex items-start gap-3">
+<span class="text-2xl" id="generator-desc-icon"></span>
+<div class="flex-1">
+<div class="flex items-center gap-2 mb-1">
+<span class="font-semibold text-gray-800" id="generator-desc-title"></span>
+<span class="text-xs font-medium px-2 py-0.5 rounded-full" id="generator-desc-badge"></span>
+</div>
+<p class="text-sm text-gray-600" id="generator-desc-text"></p>
+</div>
+</div>
+
+<!-- Email preview (ecommerce only) -->
+<div class="hidden mt-3 pt-3 border-t" id="generator-email-preview">
+<p class="text-xs font-medium text-gray-500 mb-2">Sample email addresses in these logs:</p>
+<div class="flex flex-wrap gap-2" id="generator-email-list"></div>
+</div>
+
+<!-- Count + generate -->
+<div class="mt-4 flex items-center gap-3">
+<label class="text-sm text-gray-600" for="generatorCount">Events to generate:</label>
+<input class="rounded-md shadow-sm w-32 border px-2 py-1" id="generatorCount" max="50000" min="10" type="number" value="500"/>
+<button class="btn-secondary" id="generateBtn">Generate</button>
+</div>
+</div>
+
+<div class="text-xs text-gray-500 mt-1" id="generatorInfo"></div>
+</div>
 </div>
 <p class="text-lg font-bold text-dynatrace-primary" id="file-status">No file selected.</p>
 <div class="mt-4">
