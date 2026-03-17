@@ -4,9 +4,8 @@
 
 Logstreamity is a **purely client-side** web app for testing and demonstrating log ingestion into **Dynatrace Logs API v2**—directly from your browser. Load any line-based log file (TXT/LOG/JSON/XML lines), optionally inject attributes, choose a timestamp strategy, and stream logs in real time or at high speed. No servers. No storage. Just the browser doing the work.
 
-- **Live Hosted on GitHub Pages:** https://dt-arr.github.io/logstreamity/
-- **Forked from:** https://justschwendi.github.io/logstreamity/ (original by Christian Schwendemann)
-- **Host Offline by Git-Cloning:** https://github.com/dt-arr/logstreamity
+- **Live Hosted on GitHub Pages:** https://justschwendi.github.io/logstreamity/
+- **Host Offline by Git-Cloning:** https://github.com/JustSchwendi/logstreamity
 
 ---
 
@@ -48,7 +47,7 @@ Logstreamity is a **purely client-side** web app for testing and demonstrating l
 
 ### Option A — Use the hosted page (easiest)
 
-Open: **https://dt-arr.github.io/logstreamity/**
+Open: **https://justschwendi.github.io/logstreamity/**
 
 1. Enter your **Dynatrace endpoint** (Logs API v2). Logstreamity will normalize it to `https://<host>/api/v2/logs/ingest` for ingestion!
 2. Paste a Dynatrace **Access Token** with permission  "log ingest".
