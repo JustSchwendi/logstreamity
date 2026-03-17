@@ -5,7 +5,8 @@ import { updateLabels, updateAttributeList } from './ui.js';
 import { loadAttributes, saveAttributes, loadAttributesFromFile } from './attributes.js';
 import { processEndpointUrl } from './ingest.js';
 import { WorkerManager } from './worker.js';
-import { generateGeoScadaLines } from './modules/geoscada-generator.js';
+import { generateGeoScadaLines, GENERATOR_INFO as GEO_INFO } from './modules/geoscada-generator.js';
+import { generateEcommerceEmailLines, SAMPLE_EMAILS, GENERATOR_INFO as EMAIL_INFO } from './modules/ecommerce-email-generator.js';
 
 // ===== Globals & DOM refs =====
 const endpointInput = document.getElementById('endpoint');
@@ -121,7 +122,6 @@ updateLabels(randomizeEnabled);
 
 window.updateAttributeValue = (key, value) => {
   selectedAttributes.set(key, value);
-  updateAttributeList(attributeList, selectedAttributes);
   saveAttributes(selectedAttributes);
 };
 window.removeAttribute = (key) => {
@@ -495,7 +495,7 @@ async function startWorkersPool(lines, endpoint, token, uiOptions, workerManager
       delayMs: Number(wCfg.delayMs ?? uiOptions.delay),
       batchSize: Number(wCfg.batchSize ?? uiOptions.volume),
       randomize: !!(wCfg.randomize ?? uiOptions.randomize),
-      attributes: wCfg.attributes || uiOptions.attributes,
+      attributes: uiOptions.attributes,
       rateLimitPerSecond: 90,
       historicStartMs: (uiOptions && uiOptions.historicStartMs) || undefined,
       scattered: (uiOptions && uiOptions.scattered) || undefined,
@@ -524,15 +524,72 @@ function validateReady() {
 endpointInput?.addEventListener('input', validateReady);
 tokenInput?.addEventListener('input', validateReady);
 
-// ===== GeoSCADA Generator =====
-document.getElementById('generateGeoScada')?.addEventListener('click', () => {
-  const count = parseInt(document.getElementById('geoscadaCount')?.value || '500', 10);
-  const lines = generateGeoScadaLines(count);
+// ===== Next buttons =====
+document.querySelectorAll('.next-step').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const section = btn.closest('section');
+    const next = section?.nextElementSibling;
+    if (next) next.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+
+// ===== Unified Log Generator =====
+const GENERATORS = {
+  'geoscada':        { info: GEO_INFO,   fn: generateGeoScadaLines,      icon: '🏭' },
+  'ecommerce-email': { info: EMAIL_INFO, fn: generateEcommerceEmailLines, icon: '🛒' },
+};
+
+const generatorSelect  = document.getElementById('generatorSelect');
+const generatorDescPanel = document.getElementById('generator-desc-panel');
+
+generatorSelect?.addEventListener('change', () => {
+  const val = generatorSelect.value;
+  const gen = GENERATORS[val];
+
+  if (!gen) {
+    generatorDescPanel?.classList.add('hidden');
+    return;
+  }
+
+  // Populate description panel
+  document.getElementById('generator-desc-icon').textContent  = gen.icon;
+  document.getElementById('generator-desc-title').textContent = gen.info.label;
+  const badge = document.getElementById('generator-desc-badge');
+  badge.textContent  = gen.info.badge;
+  badge.className    = `text-xs font-medium px-2 py-0.5 rounded-full ${gen.info.badgeColor}`;
+  document.getElementById('generator-desc-text').textContent  = gen.info.description;
+  generatorDescPanel?.classList.remove('hidden');
+
+  // Email preview (ecommerce only)
+  const emailPreview = document.getElementById('generator-email-preview');
+  const emailList    = document.getElementById('generator-email-list');
+  if (val === 'ecommerce-email') {
+    emailList.innerHTML = '';
+    SAMPLE_EMAILS.forEach(e => {
+      const chip = document.createElement('span');
+      chip.className = 'text-xs bg-red-50 text-red-700 border border-red-200 rounded-full px-2 py-0.5 font-mono';
+      chip.textContent = e;
+      emailList.appendChild(chip);
+    });
+    emailPreview?.classList.remove('hidden');
+  } else {
+    emailPreview?.classList.add('hidden');
+  }
+});
+
+document.getElementById('generateBtn')?.addEventListener('click', () => {
+  const val   = generatorSelect?.value;
+  const gen   = GENERATORS[val];
+  if (!gen) { alert('Please select a generator first.'); return; }
+
+  const count = parseInt(document.getElementById('generatorCount')?.value || '500', 10);
+  const lines = gen.fn(count);
   PREPARED_LINES = prepareLinesFromText(lines.join('\n'));
   logLines = lines;
-  const info = document.getElementById('geoscadaInfo');
-  if (info) info.textContent = `${lines.length} lines generated (${count} events).`;
-  if (fileStatus) fileStatus.textContent = `${lines.length} GeoSCADA log lines ready.`;
+
+  const info = document.getElementById('generatorInfo');
+  if (info) info.textContent = `${lines.length} lines generated (${count} events) using ${gen.info.label}.`;
+  if (fileStatus) fileStatus.textContent = `${lines.length} ${gen.info.label} lines ready.`;
   if (fileInput) fileInput.disabled = true;
   const demoSel = document.getElementById('demoLibrarySelect');
   if (demoSel) demoSel.value = '';

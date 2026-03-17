@@ -1,0 +1,136 @@
+version: 1
+purpose: >
+  Reference format for generating fake ecommerce application log content strings
+  that preserve the patterns observed in the bash log generator script. These logs
+  simulate a Java-based ecommerce platform running on Kubernetes with user
+  authentication, checkout, loyalty, and account management flows.
+
+content_field_only: true
+
+common_tokens:
+  timestamp: "<YYYY-MM-DD HH:MM:SS>"
+  src_ip: "<SRC_IP>"
+  server_ip: "<SERVER_IP>"
+  correlation_id: "<CORRELATION_ID_40CHAR>"
+  email: "<USERNAME>@example.com"
+  process_code: "<PROCESS_TYPE>-<USERNAME>-example.com-<EPOCH_MS_13>"
+  cart_code: "<CART_CODE>"
+  container_name: "<CONTAINER_NAME>"
+  http_status: "<HTTP_STATUS>"
+  http_method: "<HTTP_METHOD>"
+  user_agent: "<USER_AGENT>"
+  referrer_url: "<REFERRER_URL>"
+
+ip_ranges:
+  client_ips:
+    cidr: "203.0.113.0/24"
+    description: "TEST-NET-3 – used for client/source IPs"
+  server_ips:
+    cidr: "198.51.100.0/24"
+    description: "TEST-NET-2 – used for upstream server IPs"
+
+usernames:
+  - "william_shakespeare"
+  - "leonardo_davinci"
+  - "galileo_galilei"
+  - "johannes_kepler"
+  - "isaac_newton"
+  - "benjamin_franklin"
+  - "samuel_johnson"
+  - "wolfgang_mozart"
+  - "jane_austen"
+  - "charles_dickens"
+
+container_names:
+  - "salesData"
+  - "onlineOrders"
+  - "checkoutComplete"
+
+templates:
+
+  - id: credential_lookup_error
+    family: SECURITY
+    log_level: ERROR
+    format: "{timestamp} [ERROR|[{src_ip}] |{correlation_id} |com.example.exmplstore.security.examplePersistentTokenRepository] Can't find credentials for series {email}"
+    notes:
+      - "Indicates a failed persistent token lookup, typically from a remember-me cookie."
+      - "The pipe-delimited header uses spaces for alignment: [LEVEL|[IP] |CORR_ID |CLASS]."
+
+  - id: checkout_place_order
+    family: CHECKOUT
+    log_level: INFO
+    format: "{timestamp} [INFO |[{src_ip}] |{correlation_id} |class com.example.exmplfacades.order.exampleCheckoutLogger Checkout ABC] Receive API Request:method=placePayOrder, cartCode={cart_code}, customerID={email}|com.example.exmplstore.checkout.request.PayPlaceOrderRequestDto@3d3a53d5|]"
+    notes:
+      - "The trailing '|]' and the DTO object reference are part of the observed format."
+      - "cart_code is a 9-digit numeric string, e.g. 302132310."
+
+  - id: subscription_action_finish
+    family: BUSINESS_PROCESS
+    log_level: INFO
+    format: "{timestamp} [INFO |||com.example.exmpl.BusinessProcessLoggingAspect] Finish Action: [ PerformSubscriptionAction ], BusinessProcessCode: [ customerRegistrationProcess-{email}-{epoch_ms_13}], OrderCode:[ n/a ]"
+    notes:
+      - "Three empty pipe fields (no IP, no correlation ID) indicate a background/async process."
+      - "epoch_ms_13 is a 13-digit millisecond-precision Unix timestamp."
+
+  - id: forgotten_password_email
+    family: MARKETING
+    log_level: INFO
+    format: "{timestamp} [INFO |||com.example.exmplmarketing.action.exampleSendCustomerNotificationAction] Successfully sent email forgottenPassword message for process forgottenPasswordProcess-{email}-{epoch_ms_13}"
+    notes:
+      - "Background process – no IP or correlation ID in the header."
+      - "The process code embeds the user email and a timestamp for uniqueness."
+
+  - id: user_delete
+    family: USER_MANAGEMENT
+    log_level: INFO
+    format: "{timestamp} [INFO |[{src_ip}] |{correlation_id}|com.example.exmpl.UserDeleteInterceptor] Deleting userId: {email}, actioned by userId: anonymous"
+    notes:
+      - "The 'anonymous' actor typically indicates a self-service account deletion."
+      - "Note the missing space before the class name compared to other patterns – this matches the observed format."
+
+  - id: loyalty_account_check
+    family: LOYALTY
+    log_level: INFO
+    format: "{timestamp} [INFO |[{src_ip}] |{correlation_id}|com.example.exmpl.AdvantageApiClient] Loyalty: Check loyalty account exist for email: {email} , wodCorrelationId 2fee137d-915e-46fb-b390-c69aae3f150"
+    notes:
+      - "The wodCorrelationId is a fixed UUID fragment in the observed data."
+      - "Space before the comma after email is intentional."
+
+  - id: advantage_link_email_begin
+    family: BUSINESS_PROCESS
+    log_level: INFO
+    format: "{timestamp} [INFO |||com.example.exmplbusproc.aop.BusinessProcessLoggingAspect] Begin Action: [ exampleAdvantageLinkEmailAction ], BusinessProcessCode: [ advantageLinkEmailProcess-{email}-{epoch_ms_13}], OrderCode:[ n/a ]"
+    notes:
+      - "Background process – no IP or correlation ID."
+      - "Pairs with subscription_action_finish as a business process lifecycle pattern."
+
+  - id: http_access_log
+    family: ACCESS_LOG
+    log_level: ~
+    format: "{server_ip} - - [{timestamp} +1000] \"{http_method} /reminder/{email}/1 HTTP/1.1\" {http_status} 90 \"{referrer_url}\" \"{user_agent}\" {src_ip} - {correlation_id} 100"
+    notes:
+      - "Combined Log Format variant with appended client IP, correlation ID, and response time."
+      - "The +1000 timezone offset represents AEST (UTC+10)."
+      - "http_status is typically 200; referrer_url points to an order details page."
+      - "user_agent in observed data is a Chrome 135 on macOS string."
+
+observed_prevalence:
+  description: "All patterns are equally weighted (12.5% each) via uniform random selection in the source script."
+  credential_lookup_error: 1
+  checkout_place_order: 1
+  subscription_action_finish: 1
+  forgotten_password_email: 1
+  user_delete: 1
+  loyalty_account_check: 1
+  advantage_link_email_begin: 1
+  http_access_log: 1
+
+generation_guidelines:
+  - "Only generate lines from the templates above to stay aligned with the downstream parser."
+  - "Preserve the pipe-delimited log header format exactly: [LEVEL|[IP] |CORR_ID |CLASS] or [LEVEL|||CLASS] for background processes."
+  - "correlation_id must be exactly 40 alphanumeric characters (upper and lowercase)."
+  - "Use TEST-NET-3 (203.0.113.0/24) for client IPs and TEST-NET-2 (198.51.100.0/24) for server IPs."
+  - "Email addresses must use the @example.com domain with usernames drawn from the provided list."
+  - "Timestamps should fall within the last hour for realism."
+  - "Each generated log line must be paired with a k8s.container.name attribute drawn from the container_names list."
+  - "The log.source attribute should be set to 'bash-script' for provenance tracking."

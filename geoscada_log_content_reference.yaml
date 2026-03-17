@@ -1,0 +1,231 @@
+version: 1
+purpose: >
+  Reference format for generating fake Geo SCADA log content strings that preserve
+  the metric-producing patterns observed in the uploaded dataset. This file covers
+  only content-field formats that produced at least one metric.
+
+content_field_only: true
+
+common_tokens:
+  timestamp: "<DD-MMM-YYYY HH:MM:SS.mmm>"
+  thread_hex: "<HEX4>"
+  server_name: "<SERVER_NAME>"
+  peer_server_name: "<PEER_SERVER_NAME>"
+  src_ip: "<SRC_IP>"
+  dest_ip: "<DEST_IP>"
+  src_port: "<SRC_PORT>"
+  dest_port: "<DEST_PORT>"
+  socket_hex: "<SOCKET_HEX>"
+  connection_number: "<CONNECTION_NUMBER>"
+  client_id: "<CLIENT_ID>"
+  queue_count: "<QUEUE_COUNT>"
+  area_code: "<AREA_CODE>"
+  area_number: "<AREA_NUMBER>"
+  transfer_number: "<TRANSFER_NUMBER>"
+  runtime_seconds_6dp: "<SECONDS_6DP>"
+  runtime_seconds_3dp: "<SECONDS_3DP>"
+  percent_4dp: "<PERCENT_4DP>"
+  integer: "<INTEGER>"
+  bytes: "<BYTES>"
+  milliseconds_6dp: "<MILLISECONDS_6DP>"
+  state_change_time: "<DD-MMM-YYYY HH:MM:SS.mmm>"
+  time_went_main: "<DD-MMM-YYYY HH:MM:SS.mmm|Never>"
+  license_site_id: "<LICENSE_SITE_ID|None>"
+  version: "<VERSION>"
+  registry_root: "<REGISTRY_ROOT>"
+  operating_system: "<OPERATING_SYSTEM>"
+  cpu_description: "<CPU_DESCRIPTION>"
+  license_runtime: "<LICENSE_RUNTIME>"
+  telnet_server: "<ENABLED|DISABLED>"
+  http_port: "<HTTP_PORT>"
+  https_port: "<HTTPS_PORT>"
+
+templates:
+
+  - id: trans_onexecute
+    family: TRANS
+    metrics_generated: ["opc.onexectime"]
+    format: "{timestamp} {thread_hex} [TRANS] 0 OnExecute Time =   {runtime_seconds_6dp} seconds"
+    notes:
+      - "Keep exactly three spaces after '=' to match the observed style."
+      - "runtime_seconds_6dp should usually look like 0.000056"
+
+  - id: trans_syncexecute
+    family: TRANS
+    metrics_generated: ["opc.syncexectime"]
+    format: "{timestamp} {thread_hex} [TRANS] 0 SyncExecute Time =   {runtime_seconds_6dp} seconds"
+    notes:
+      - "Keep exactly three spaces after '=' to match the observed style."
+      - "runtime_seconds_6dp should usually look like 0.000004"
+
+  - id: svr_accepted_connection
+    family: SVR
+    metrics_generated: ["src_ip", "src_port", "connection_number", "dest_ip", "socket", "dest_port"]
+    format: "{timestamp} {thread_hex} [SVR] Accepted connection {connection_number} from {src_ip}:{src_port} to {dest_ip}:{dest_port} on socket {socket_hex}..."
+    notes:
+      - "The trailing ellipsis '...' is part of the observed content."
+      - "Use sanitized IPs and ports if needed."
+
+  - id: svradvise_sendevent
+    family: SVRADVISE
+    metrics_generated: ["clients.queuedevents", "client"]
+    format: "{timestamp} {thread_hex} [SVRADVISE] {area_code}#{area_number} SendEvent: EVT_OPCAE_EVENT ({bytes} bytes) to ClientId {client_id} ({queue_count} events queued)"
+    notes:
+      - "EVT_OPCAE_EVENT is fixed in the observed metric-producing rows."
+      - "queue_count was commonly 1 in the sample, but keep it variable."
+
+  - id: lus_lock_usage
+    family: LUS
+    metrics_generated: ["db.lockusage"]
+    format: "{timestamp} {thread_hex} [LUS] Lock usage, {percent_4dp}%, over the last second (diagnostic)"
+    notes:
+      - "Example percentage style: 30.5420"
+
+  - id: logic_onschedule
+    family: LOGIC
+    metrics_generated: ["logic.scheduled"]
+    format: "{timestamp} {thread_hex} [LOGIC] OnSchedule() {integer} programs to process"
+    notes:
+      - "Observed values were integer counts such as 1."
+
+  - id: datafile_flush_cycle_complete
+    family: DATAFILE
+    metrics_generated: ["datafile.flushcycletime"]
+    format: "{timestamp} {thread_hex} [DATAFILE] Flush cycle complete, flushed {integer} files ({bytes} bytes), time taken {milliseconds_6dp} milliseconds"
+    notes:
+      - "Example: flushed 0 files (0 bytes), time taken 0.057800 milliseconds"
+
+  - id: stby_transfer_complete_core
+    family: STBY
+    metrics_generated: ["stby.dyn", "stby.data", "stby.hisrec", "stby.synctime"]
+    format: "{timestamp} {thread_hex} [STBY] 1 Transfer {transfer_number} Complete: Time {runtime_seconds_3dp} S, {stby_metric_block}, {server_name} "
+    notes:
+      - "There is a trailing space after the server name in the observed data."
+      - "Generate stby_metric_block using one of the allowed variants below."
+    stby_metric_block_variants:
+      - "Data {integer}, Dyn {integer}, Evt {integer}, HisRec {integer}, JnlRec {integer}"
+      - "Data {integer}, Dyn {integer}, Evt {integer}, HisRec {integer}, JnlFile {integer}, JnlRec {integer}"
+      - "Data {integer}, Dyn {integer}, Int {integer}, Evt {integer}, HisRec {integer}, JnlRec {integer}"
+      - "Data {integer}, Dyn {integer}, Int {integer}, Evt {integer}, HisRec {integer}, JnlFile {integer}, JnlRec {integer}"
+      - "Data {integer}, Dyn {integer}, Int {integer}, Evt {integer}, HisRec {integer}, AlsRec {integer}, JnlRec {integer}"
+      - "Data {integer}, Dyn {integer}, Int {integer}, Evt {integer}, HisRec {integer}, AlsRec {integer}, JnlFile {integer}, JnlRec {integer}"
+      - "Data {integer}, Dyn {integer}, Evt {integer}, HisRec {integer}, AlsRec {integer}, JnlRec {integer}"
+      - "Cfg {integer}, Data {integer}, Dyn {integer}, Int {integer}, Evt {integer}, HisRec {integer}, JnlFile {integer}, JnlRec {integer}"
+
+  - id: general_information_snapshot
+    family: GENERAL_INFORMATION
+    metrics_generated:
+      - "total_webx_clients"
+      - "available_physical_memory_mb"
+      - "total_opc_clients"
+      - "database_server"
+      - "total_database_points"
+      - "license_runtime"
+      - "operating_system"
+      - "database_points"
+      - "data_access_clients"
+      - "process_peak_file_usage_mb"
+      - "web_server_http_port"
+      - "available_virtual_memory_mb"
+      - "total_viewx_clients"
+      - "process_working_set_size_mb"
+      - "total_data_access_clients"
+      - "current_state"
+      - "total_paging_file_mb"
+      - "web_server_https_port"
+      - "available_paging_file_mb"
+      - "cpu"
+      - "total_virtual_memory_mb"
+      - "version"
+      - "registry_root"
+      - "process_peak_working_set_size_mb"
+      - "total_physical_memory_mb"
+      - "memory_used_by_database_objects_kb"
+      - "viewx_clients"
+      - "process_peak_page_file_usage_mb"
+      - "opc_clients"
+      - "webx_clients"
+      - "telnet_server"
+      - "state_change_time"
+      - "time_went_main"
+      - "licence_site_id"
+      - "available_physical_memory_percent"
+      - "available_paging_file_percent"
+      - "available_virtual_memory_percent"
+      - "data_access_clients_percent"
+      - "opc_clients_percent"
+      - "viewx_clients_percent"
+      - "webx_clients_percent"
+      - "database_points_percent"
+    format: |
+      01. General Information
+          EcoStruxure Geo SCADA Expert 2021 on {server_name}
+          Version {version}
+          Copyright \A9 2005-2024 AVEVA Group Limited or its subsidiaries. All rights reserved.
+          License Site Id: {license_site_id}
+
+          June 2024 Update
+
+          'EVERYONE' HAS ACCESS TO ROOT GROUP.
+          As an additional security measure, please consider removing these permissions.
+
+          Database Watchdog is enabled; system will restart after a stall is detected.
+
+          Current State: {current_state_line}
+          State Change Time: {state_change_time}
+          Time Went Main: {time_went_main}
+
+          Available Physical Memory: {available_physical_memory_mb} of {total_physical_memory_mb} MBytes
+          Available Paging File: {available_paging_file_mb} of {total_paging_file_mb} MBytes
+          Available Virtual Memory: {available_virtual_memory_mb} of {total_virtual_memory_mb} MBytes
+
+          Process Working Set Size: {process_working_set_size_mb} MBytes
+          Process Peak Working Set Size: {process_peak_working_set_size_mb} MBytes
+          Process Page File Usage: {process_page_file_usage_mb} MBytes
+          Process Peak Page File Usage: {process_peak_file_usage_mb} MBytes
+          Memory used by database objects: {memory_used_by_database_objects_kb} KBytes
+
+          Operating System: {operating_system}
+          CPU: {cpu_description}
+          Registry Root: {registry_root}
+          License Runtime: {license_runtime}
+
+          Database points: {database_points} of {total_database_points} ({database_points_percent}%)
+          Data Access Clients: {data_access_clients} of {total_data_access_clients} ({data_access_clients_percent}%)
+          OPC Clients: {opc_clients} of {total_opc_clients} ({opc_clients_percent}%)
+          ViewX Clients: {viewx_clients} of {total_viewx_clients} ({viewx_clients_percent}%)
+          WebX Clients: {webx_clients} of {total_webx_clients} ({webx_clients_percent}%)
+
+          Web Server HTTP Port: {http_port}
+          Web Server HTTPS Port: {https_port}
+          Telnet Server: {telnet_server}
+    notes:
+      - "Use Current State: Main OR Current State: Standby to \"{peer_server_name}\""
+      - "License Site Id line in observed data appeared as either '142933' (Quote this for support) or None."
+      - "Keep indentation exactly as shown if the downstream parser is whitespace-sensitive."
+
+  - id: snapshot_completed
+    family: SNAPSHOT
+    metrics_generated: ["db.snapshottime"]
+    format: "{timestamp} {thread_hex} ...snapshot completed in {integer} ms."
+    notes:
+      - "The observed content used the literal lowercase phrase 'snapshot completed in'."
+
+generation_guidelines:
+  - "Only generate lines from the templates above if the goal is to guarantee at least one metric-producing pattern."
+  - "Preserve bracketed logger families exactly: [TRANS], [SVR], [SVRADVISE], [LUS], [LOGIC], [STBY], [DATAFILE]."
+  - "For fake data, replace private IPs, server names, license ids, and client identifiers with sanitized placeholders or safe synthetic values."
+  - "Do not invent completely new message families if the parser must stay aligned to the observed metric-producing population."
+  - "For high-volume synthetic generation, weight templates roughly by observed prevalence: TRANS >> SVR >> SVRADVISE > LUS/STBY/LOGIC > DATAFILE > GENERAL_INFORMATION/SNAPSHOT."
+
+observed_prevalence:
+  trans_syncexecute: 31598
+  trans_onexecute: 4390
+  svr_accepted_connection: 2354
+  svradvise_sendevent: 800
+  lus_lock_usage: 285
+  stby_transfer_complete_all_variants: 185
+  logic_onschedule: 148
+  datafile_flush_cycle_complete: 34
+  general_information_snapshot: 3
+  snapshot_completed: 1

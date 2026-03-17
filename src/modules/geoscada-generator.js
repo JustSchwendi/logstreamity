@@ -1,6 +1,13 @@
 // src/modules/geoscada-generator.js
 // Synthetic GeoSCADA log generator based on geoscada_log_content_reference.yaml
 
+export const GENERATOR_INFO = {
+  label: "GeoSCADA Expert DB Logs",
+  description: "Generates synthetic EcoStruxure Geo SCADA Expert database log lines weighted by real-world event prevalence. Covers TRANS, SVR, SVRADVISE, LUS, STBY, LOGIC, DATAFILE, and SNAPSHOT event families from Operational Technology (OT) environments — ideal for testing OT/ICS observability pipelines in Dynatrace.",
+  badge: "Operational Technology",
+  badgeColor: "bg-blue-100 text-blue-700"
+};
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function pad2(n) { return String(n).padStart(2, '0'); }
@@ -20,6 +27,42 @@ function fmt4dp(n) { return n.toFixed(4); }
 
 const SERVER_POOL = ['SCADA-SVR-01', 'SCADA-SVR-02', 'GEO-PRIMARY', 'GEO-STANDBY', 'SCADA-PROD-A', 'SCADA-PROD-B'];
 const PEER_POOL   = ['SCADA-SVR-02', 'SCADA-SVR-01', 'GEO-PRIMARY', 'GEO-STANDBY', 'SCADA-PROD-B', 'SCADA-PROD-A'];
+
+const OS_POOL = [
+  'Windows Server 2016 Standard',
+  'Windows Server 2016 Datacenter',
+  'Windows Server 2019 Standard',
+  'Windows Server 2019 Datacenter',
+  'Windows Server 2022 Standard',
+  'Windows Server 2022 Datacenter',
+];
+
+const CPU_POOL = [
+  'Intel(R) Xeon(R) E5-2690 v4 @ 2.60GHz',
+  'Intel(R) Xeon(R) Gold 5120 CPU @ 2.20GHz',
+  'Intel(R) Xeon(R) Gold 6140 CPU @ 2.30GHz',
+  'Intel(R) Xeon(R) Gold 6226R CPU @ 2.90GHz',
+  'Intel(R) Xeon(R) Gold 6254 CPU @ 3.10GHz',
+  'Intel(R) Xeon(R) Silver 4214R CPU @ 2.40GHz',
+  'Intel(R) Xeon(R) Silver 4216 CPU @ 2.10GHz',
+  'AMD EPYC 7302P 16-Core Processor',
+  'AMD EPYC 7443P 24-Core Processor',
+];
+
+const VERSION_POOL = [
+  '83.5423.1',
+  '84.5480.3',
+  '85.5543.2',
+  '85.5601.4',
+  '86.5650.1',
+];
+
+const REGISTRY_ROOT_POOL = [
+  'HKEY_LOCAL_MACHINE\\SOFTWARE\\Schneider Electric\\ClearSCADA',
+  'HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Schneider Electric\\ClearSCADA',
+  'HKEY_LOCAL_MACHINE\\SOFTWARE\\AVEVA\\GeoSCADA',
+  'HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\AVEVA\\GeoSCADA',
+];
 
 // Weighted template table — weights from observed_prevalence in the YAML reference
 const TEMPLATES = [
@@ -109,7 +152,7 @@ function renderGeneralInformation(ts, serverName, peerName) {
   return [
     `${t} 0000 01. General Information`,
     `    EcoStruxure Geo SCADA Expert 2021 on ${serverName}`,
-    `    Version 85.5543.2`,
+    `    Version ${VERSION_POOL[ri(0, VERSION_POOL.length - 1)]}`,
     `    Copyright \u00A9 2005-2024 AVEVA Group Limited or its subsidiaries. All rights reserved.`,
     `    License Site Id: ${licId}`,
     `    June 2024 Update`,
@@ -127,9 +170,9 @@ function renderGeneralInformation(ts, serverName, peerName) {
     `    Process Page File Usage: ${ri(200, 1000)} MBytes`,
     `    Process Peak Page File Usage: ${ri(200, 1000)} MBytes`,
     `    Memory used by database objects: ${ri(10000, 500000)} KBytes`,
-    `    Operating System: Windows Server 2022 Datacenter`,
-    `    CPU: Intel(R) Xeon(R) Gold 6254 CPU @ 3.10GHz`,
-    `    Registry Root: HKEY_LOCAL_MACHINE\\SOFTWARE\\Schneider Electric\\ClearSCADA`,
+    `    Operating System: ${OS_POOL[ri(0, OS_POOL.length - 1)]}`,
+    `    CPU: ${CPU_POOL[ri(0, CPU_POOL.length - 1)]}`,
+    `    Registry Root: ${REGISTRY_ROOT_POOL[ri(0, REGISTRY_ROOT_POOL.length - 1)]}`,
     `    License Runtime: Server`,
     `    Database points: ${dbPts} of ${totDbPts} (${pct(dbPts, totDbPts)}%)`,
     `    Data Access Clients: ${dac} of ${totDac} (${pct(dac, totDac)}%)`,
