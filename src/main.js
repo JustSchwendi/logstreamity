@@ -47,6 +47,20 @@ const workerRowElems = new Map();
 const wm = new WorkerManager();
 
 // ===== Helpers =====
+const fileStatusBox = document.getElementById('file-status-box');
+const FILE_STATUS_READY   = ['border-green-400','bg-green-50','text-green-800'];
+const FILE_STATUS_DEFAULT = ['border-gray-200','bg-gray-50','text-gray-500'];
+
+function setFileStatus(msg, ready = false) {
+  if (fileStatus) fileStatus.textContent = msg;
+  if (fileStatusBox) {
+    const add    = ready ? FILE_STATUS_READY   : FILE_STATUS_DEFAULT;
+    const remove = ready ? FILE_STATUS_DEFAULT : FILE_STATUS_READY;
+    fileStatusBox.classList.remove(...remove);
+    fileStatusBox.classList.add(...add);
+  }
+}
+
 const logStatus = (msg) => {
   const now = new Date().toLocaleTimeString();
   if (statusLog) {
@@ -205,14 +219,14 @@ fileInput?.addEventListener('change', function () {
       const text = String(e.target.result || '');
       PREPARED_LINES = prepareLinesFromText(text);
       logLines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-      if (fileStatus) fileStatus.textContent = `${logLines.length} log lines loaded.`;
+      setFileStatus(`${logLines.length} log lines loaded.`, true);
       validateReady();
     };
     reader.readAsText(file);
   } else {
     PREPARED_LINES = null;
     logLines = [];
-    if (fileStatus) fileStatus.textContent = 'No file selected.';
+    setFileStatus('No file selected.', false);
     validateReady();
   }
 });
@@ -333,7 +347,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             logLines = txt.split(/\r?\n/).filter(Boolean);
             const count = logLines.length;
             if (demoInfo) demoInfo.textContent = `${v} loaded (${count} lines)`;
-            if (fileStatus) fileStatus.textContent = `${v} selected (${count} lines)`;
+            setFileStatus(`${v} selected (${count} lines)`, true);
             injectAttributesBtn?.removeAttribute('disabled');
           }catch(e){ if (demoInfo) demoInfo.textContent = 'Failed to load demo file'; }
         } else {
@@ -341,7 +355,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           window.__LOGSTREAMITY_DEMO__ = null;
           PREPARED_LINES = null;
           if (demoInfo) demoInfo.textContent = '';
-          if (fileStatus) fileStatus.textContent = 'No file selected.';
+          setFileStatus('No file selected.', false);
         }
         validateReady();
       };
@@ -591,7 +605,7 @@ document.getElementById('generateBtn')?.addEventListener('click', () => {
 
   const info = document.getElementById('generatorInfo');
   if (info) info.textContent = `${lines.length} lines generated (${count} events) using ${gen.info.label}.`;
-  if (fileStatus) fileStatus.textContent = `${lines.length} ${gen.info.label} lines ready.`;
+  setFileStatus(`${lines.length} ${gen.info.label} lines ready.`, true);
   if (fileInput) fileInput.disabled = true;
   const demoSel = document.getElementById('demoLibrarySelect');
   if (demoSel) demoSel.value = '';
