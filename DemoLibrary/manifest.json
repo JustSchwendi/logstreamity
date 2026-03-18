@@ -6,23 +6,23 @@
     },
     {
       "name": "kubelet full disk and memory leak cause crash",
-      "path": "kubelet_full_disk_and_memory_leak_crash.txt"
+      "path": "DemoLibrary/kubelet_full_disk_and_memory_leak_crash.txt"
     },
     {
       "name": "AWS Lambda secret error and coldstarts",
-      "path": "aws_lambda_secrets_coldstart.txt"
+      "path": "DemoLibrary/aws_lambda_secrets_coldstart.txt"
     },
     {
       "name": "Azure Function coldstarts",
-      "path": "azure_function_coldstart.txt"
+      "path": "DemoLibrary/azure_function_coldstart.txt"
     },
     {
       "name": "Oracle DB under DDoS and overload",
-      "path": "oracle_db_ddos_and_overload.txt"
+      "path": "DemoLibrary/oracle_db_ddos_and_overload.txt"
     },
     {
       "name": "Oracle DB FRA full and deadlocks",
-      "path": "oracle_db_errors.txt"
+      "path": "DemoLibrary/oracle_db_errors.txt"
     },
     {
       "name": "F5 Kernel Panic at boot, no SNMP signals yet",

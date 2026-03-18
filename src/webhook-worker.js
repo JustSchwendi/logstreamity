@@ -247,6 +247,10 @@ self.onmessage = async (event) => {
     }
   }catch(e){
     if(String(e).includes('cancelled')) return finish('cancel');
-    return finish('error', String(e && e.message || e));
+    const msg = String(e && e.message || e);
+    if(msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror') || msg.toLowerCase().includes('load failed')){
+      return finish('error', 'Failed to fetch — request was blocked before reaching Dynatrace. Check if an ad blocker (e.g. AdBlock, uBlock) or privacy browser (e.g. Brave) is blocking the request, and add an exception for your Dynatrace endpoint.');
+    }
+    return finish('error', msg);
   }
 };

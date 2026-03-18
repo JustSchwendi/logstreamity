@@ -525,10 +525,12 @@ endpointInput?.addEventListener('input', validateReady);
 tokenInput?.addEventListener('input', validateReady);
 
 // ===== Next buttons =====
+const allSections = Array.from(document.querySelectorAll('section'));
 document.querySelectorAll('.next-step').forEach(btn => {
   btn.addEventListener('click', () => {
     const section = btn.closest('section');
-    const next = section?.nextElementSibling;
+    const idx = allSections.indexOf(section);
+    const next = idx >= 0 ? allSections[idx + 1] : null;
     if (next) next.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 });
