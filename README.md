@@ -168,5 +168,7 @@ You’re free to **use, copy, modify, merge, publish, distribute, sublicense,** 
 
 ## Credits
 
-Built by **Christian Schwendemann**.  
+Built by **Christian Schwendemann**.
 Made with ❤️ for SREs, DevOps, and anyone who needs a fast, safe way to demo or test Dynatrace log ingestion.
+
+**Additional contributors:** Amrith Raj
