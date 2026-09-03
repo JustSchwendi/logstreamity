@@ -28,6 +28,10 @@
       "name": "F5 Kernel Panic at boot, no SNMP signals yet",
       "path": "DemoLibrary/F5_Kernel_Panic_at_boot_no_SNMP.txt"
     },
+	{
+      "name": "Security Demo in a can - Bruteforce, ssh etc.",
+      "path": "DemoLibrary/security_demo_logs.json"
+    },
     {
       "name": "IDS detectes heartbleed bug attack",
       "path": "DemoLibrary/IDS_detectes_heartbleed.txt"
@@ -38,3 +42,6 @@
     }
   ]
 }
+
+
+
