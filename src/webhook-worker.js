@@ -3,11 +3,30 @@
 /* Utilities */
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 class RateLimiter{
-  constructor(rps){ this.capacity=Math.max(1,Number(rps||90)); this.tokens=this.capacity;
-    this._t=setInterval(()=>{ this.tokens=Math.min(this.capacity,this.tokens+this.capacity); },1000);
+  // Refills continuously (proportional to elapsed time) instead of hard-resetting to
+  // full capacity once per second. A once-per-second reset is fine when every take()
+  // asks for 1 token, but once a single batched request asks for a large chunk of the
+  // capacity, a hard reset lets through at most ~1 such request per second no matter
+  // how much concurrency is available — this is what makes a "fast" batched send look
+  // rate-limited to ~1 req/sec instead of the intended ~rps events/sec.
+  constructor(rps){ this.capacity=Math.max(1,Number(rps||90)); this.tokens=this.capacity; this.lastRefill=Date.now(); }
+  _refill(){
+    const now = Date.now();
+    const elapsedSec = (now - this.lastRefill) / 1000;
+    if (elapsedSec <= 0) return;
+    this.tokens = Math.min(this.capacity, this.tokens + elapsedSec * this.capacity);
+    this.lastRefill = now;
   }
-  async take(n=1){ n=Math.max(1,n|0); while(this.tokens<n){ await sleep(10); if(cancelled) throw new Error("cancelled"); } this.tokens-=n; }
-  stop(){ try{ clearInterval(this._t); }catch{} }
+  async take(n=1){
+    n = Math.min(Math.max(1,n|0), this.capacity);
+    while (true){
+      this._refill();
+      if (this.tokens >= n){ this.tokens -= n; return; }
+      await sleep(10);
+      if (cancelled) throw new Error("cancelled");
+    }
+  }
+  stop(){}
 }
 function normalizeEndpoint(input){
   if(!input) return "";
@@ -18,9 +37,19 @@ function normalizeEndpoint(input){
   return u.toString();
 }
 
-let cancelled=false, currentController=null, loopActive=false;
-function newAbortController(){ if(typeof AbortController!=='undefined'){ currentController=new AbortController(); return currentController; } currentController=null; return null; }
-function abortInFlight(){ try{ currentController?.abort(); }catch{} currentController=null; }
+let cancelled=false, loopActive=false;
+// Tracks every in-flight request's controller (not just the latest), since with
+// concurrent batched sends there can be many requests in flight at once — a single
+// shared controller would only ever abort whichever one last overwrote it.
+const inFlightControllers = new Set();
+function newAbortController(){
+  if(typeof AbortController==='undefined') return null;
+  const ctrl = new AbortController();
+  inFlightControllers.add(ctrl);
+  return ctrl;
+}
+function releaseController(ctrl){ if (ctrl) inFlightControllers.delete(ctrl); }
+function abortInFlight(){ for (const ctrl of inFlightControllers){ try{ ctrl.abort(); }catch{} } inFlightControllers.clear(); }
 
 async function sendWithRetry(endpoint, token, body, attempt=0, signal){
   const res = await fetch(endpoint, {
@@ -74,7 +103,32 @@ function getLineContent(any){ return (any && typeof any==='object' && 'content' 
 function getDerivedLevel(any){ return (any && typeof any==='object' && any.derived && typeof any.derived==='object' && any.derived.loglevel) ? String(any.derived.loglevel) : null; }
 function isSleepDirective(s){ return /^\s*\[\[\[\s*SLEEP\s+(\d+)\s*\]\]\]\s*$/i.test(s||""); }
 function sleepMsFromDirective(s){ const m=/^\s*\[\[\[\s*SLEEP\s+(\d+)\s*\]\]\]\s*$/i.exec(s||""); return m ? parseInt(m[1],10) : 0; }
-function makeScheduler(delayMs, batchSize, baseTime){ const step=Math.max(0, Math.floor((Number(delayMs)||0)/Math.max(1, Number(batchSize)||1))); let t=baseTime||Date.now(); return ()=>{ const cur=t; t+=step; return cur; }; }
+// Dispatches worker(i) for i in [0,n) with up to `concurrency` in flight at once,
+// instead of awaiting each item's full round-trip before starting the next. The
+// rate limiter (inside worker) still caps actual send rate; this just stops network
+// latency from serializing an otherwise-fast backfill/scatter run.
+function runPool(n, concurrency, worker){
+  return new Promise((resolve) => {
+    if (n <= 0) return resolve(true);
+    const cap = Math.max(1, concurrency|0);
+    let nextIndex = 0, active = 0, failed = false;
+    const launch = () => {
+      while (!failed && !cancelled && active < cap && nextIndex < n){
+        const i = nextIndex++;
+        active++;
+        worker(i).then((ok) => {
+          active--;
+          if (!ok) failed = true;
+          if (cancelled || failed){ if (active === 0) resolve(false); return; }
+          if (nextIndex >= n && active === 0){ resolve(true); return; }
+          launch();
+        });
+      }
+      if ((failed || cancelled) && active === 0) resolve(false);
+    };
+    launch();
+  });
+}
 
 /* Worker message handling */
 self.onmessage = async (event) => {
@@ -114,45 +168,92 @@ self.onmessage = async (event) => {
 
   const total = Array.isArray(lines) ? lines.length : 0;
 
-  const sendRec = async (rec) => {
-    await limiter.take(1);
+  // Sends multiple records in a single POST — the ingest API accepts arrays of up to
+  // 50,000 records (5MB) per request, so batching here (instead of one record per
+  // request) cuts the number of network round-trips by up to WIRE_BATCH-fold. That
+  // matters far more than send-concurrency once there's any real latency to the
+  // endpoint, and it's also what keeps a "fast" backfill from hitting the browser's
+  // own ~6-connections-per-host ceiling on HTTP/1.1.
+  const sendRecords = async (records) => {
+    await limiter.take(records.length);
     const ctrl = newAbortController();
-    const r = await sendWithRetry(endpoint, token, [rec], 0, ctrl?.signal);
-    currentController = null;
+    const r = await sendWithRetry(endpoint, token, records, 0, ctrl?.signal);
+    releaseController(ctrl);
     if(cancelled) return { ok:false, cancelled:true };
     if(!r.ok) return { ok:false, status:r.status, text:r.text||"" };
     return { ok:true };
   };
 
+  const tryParseJsonLine = (s) => {
+    if (typeof s !== 'string') return null;
+    const t = s.trim();
+    if (!t.startsWith('{') || !t.endsWith('}')) return null;
+    try {
+      const obj = JSON.parse(t);
+      return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : null;
+    } catch { return null; }
+  };
+
   const buildRecord = (s, ts, wName) => {
-    const rec = {
-      content: s,
-      timestamp: ts,
-      ...userAttrs,                    // <-- top-level attributes (incl. 'dt.source_entity')
-      source_id: sourceId,
-      seq_no: seq++,
-      worker: wName || "logstreamity"
-    };
-    if (allowParseLevel){
+    // If the line is itself a JSON object (e.g. a pre-built JSONL log), unpack its
+    // fields as top-level attributes instead of nesting the whole line under `content`.
+    const parsed = tryParseJsonLine(s);
+    const rec = parsed ? { ...parsed } : { content: s };
+
+    if (mode === 'sequential') {
+      // Preserve a timestamp already baked into the line; only fill in if missing.
+      if (rec.timestamp === undefined) rec.timestamp = ts;
+    } else {
+      // historic/scattered modes explicitly control timing, so they override.
+      rec.timestamp = ts;
+    }
+
+    Object.assign(rec, userAttrs);   // <-- top-level attributes (incl. 'dt.source_entity') win, matching API precedence
+    rec.source_id = sourceId;
+    rec.seq_no = seq++;
+    rec.worker = wName || "logstreamity";
+
+    // Plain-text lines get a best-effort severity guess; JSON lines are expected to
+    // already carry their own severity/loglevel/level/status field.
+    if (allowParseLevel && !parsed){
       const derived = parseSeverityFromLine(s);
       if (derived) rec.loglevel = derived;
     }
     return rec;
   };
 
+  const WIRE_BATCH = Math.max(1, Math.min(rps, 50));
+
+  // Sends `pending` in WIRE_BATCH-sized groups (guards against a single oversized
+  // request if the user sets Line Volume very high) and clears it on success.
+  const flushPending = async (pending) => {
+    while (pending.length){
+      const group = pending.splice(0, WIRE_BATCH);
+      const rs = await sendRecords(group);
+      if (!rs.ok) return rs;
+    }
+    return { ok: true };
+  };
+
   const runSequentialOnce = async () => {
     for (let i=0; i<total; i+=batchSize){
       if (cancelled) return false;
       const chunk = lines.slice(i, i+batchSize);
+      let pending = [];
       for (const item of chunk){
         if (cancelled) return false;
         const s = getLineContent(item);
         if (!s) continue;
-        if (isSleepDirective(s)){ const ms=sleepMsFromDirective(s); if (ms>0) await sleep(ms); continue; }
-        const rec = buildRecord(s, Date.now(), workerInfo?.name);
-        const rs = await sendRec(rec);
-        if (!rs.ok){ if (rs.cancelled) return false; self.postMessage({ type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}` }); return false; }
+        if (isSleepDirective(s)){
+          const rs = await flushPending(pending);
+          if (!rs.ok){ if (rs.cancelled) return false; self.postMessage({ type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}` }); return false; }
+          const ms=sleepMsFromDirective(s); if (ms>0) await sleep(ms);
+          continue;
+        }
+        pending.push(buildRecord(s, Date.now(), workerInfo?.name));
       }
+      const rs = await flushPending(pending);
+      if (!rs.ok){ if (rs.cancelled) return false; self.postMessage({ type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}` }); return false; }
       if (delayMs>0){ await sleep(delayMs); if (cancelled) return false; }
       const sent = Math.min(i + chunk.length, total);
       self.postMessage({ type:"PROGRESS", progress: Math.round((sent/total)*100) });
@@ -160,19 +261,45 @@ self.onmessage = async (event) => {
     return true;
   };
 
-  const runScheduledOnce = async () => {
-    // HISTORIC: explicit start timestamp
-    if (mode === "historic" && historicStartMs){
-      const nextTs = makeScheduler(delayMs, batchSize, historicStartMs);
-      for (let i=0; i<total; i++){
-        if (cancelled) return false;
-        const s = getLineContent(lines[i]); if (!s) continue;
-        const rec = buildRecord(s, nextTs(), workerInfo?.name);
-        const rs = await sendRec(rec);
-        if (!rs.ok){ if (rs.cancelled) return false; self.postMessage({ type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}` }); return false; }
-        if ((seq % 50)===0) self.postMessage({ type:"PROGRESS", progress: Math.round((seq/total)*100) });
+  // historic/scattered/default-scheduled all share this: every record's timestamp is
+  // computed up front from its index, so sends can be pipelined instead of waiting for
+  // each request's full network round-trip before starting the next one. Actual send
+  // rate is still capped by the RateLimiter inside sendRec(); this only removes the
+  // artificial serialization that made a "fast" backfill run as slow as real-time replay
+  // whenever the endpoint had any non-trivial latency.
+  const CONCURRENCY = Math.max(5, Math.min(rps, 50));
+
+  const runIndexed = async (n, computeTs) => {
+    const numBatches = Math.ceil(n / WIRE_BATCH);
+    let completed = 0;
+    const ok = await runPool(numBatches, CONCURRENCY, async (b) => {
+      const start = b * WIRE_BATCH;
+      const end = Math.min(n, start + WIRE_BATCH);
+      const records = [];
+      for (let i = start; i < end; i++){
+        const s = getLineContent(lines[i]);
+        if (!s) continue;
+        records.push(buildRecord(s, computeTs(i), workerInfo?.name));
       }
+      if (records.length === 0) return true;
+      const rs = await sendRecords(records);
+      if (!rs.ok){
+        if (!rs.cancelled) self.postMessage({ type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}` });
+        return false;
+      }
+      completed += records.length;
+      self.postMessage({ type:"PROGRESS", progress: Math.round((completed/n)*100) });
       return true;
+    });
+    if (ok) self.postMessage({ type:"PROGRESS", progress: 100 });
+    return ok && !cancelled;
+  };
+
+  const runScheduledOnce = async () => {
+    // HISTORIC: explicit start timestamp, each line spaced by delay/batchSize from it
+    if (mode === "historic" && historicStartMs){
+      const step = Math.max(0, Math.floor((Number(delayMs)||0)/Math.max(1, Number(batchSize)||1)));
+      return runIndexed(total, (i) => historicStartMs + i*step);
     }
 
     // SCATTERED: spread over [start,end] in chunks
@@ -184,10 +311,7 @@ self.onmessage = async (event) => {
       const chunks = Math.max(1, Number(scattered.chunks || 1));
       const chunkSize = Math.ceil(n / chunks);
 
-      for (let i=0; i<n; i++){
-        if (cancelled) return false;
-        const s = getLineContent(lines[i]); if (!s) continue;
-
+      const computeTs = (i) => {
         let ts = start + Math.floor(duration * (i / Math.max(1, n - 1)));
         if (chunks > 1){
           const chunkIndex = Math.floor(i / chunkSize);
@@ -201,28 +325,15 @@ self.onmessage = async (event) => {
             ts += Math.floor(Math.random() * (2*jitter + 1)) - jitter;
           }
         }
-
-        const rec = buildRecord(s, ts, workerInfo?.name);
-        const rs = await sendRec(rec);
-        if (!rs.ok){ if (rs.cancelled) return false; self.postMessage({ type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}` }); return false; }
-        if ((seq % 50)===0) self.postMessage({ type:"PROGRESS", progress: Math.round((seq/total)*100) });
-        if ((seq % 500)===0) await sleep(1);
-      }
-      return true;
+        return ts;
+      };
+      return runIndexed(n, computeTs);
     }
 
     // Default scheduled from "now"
-    const nextTs = makeScheduler(delayMs, batchSize, Date.now());
-    for (let i=0; i<total; i++){
-      if (cancelled) return false;
-      const s = getLineContent(lines[i]); if (!s) continue;
-      const rec = buildRecord(s, nextTs(), workerInfo?.name);
-      const rs = await sendRec(rec);
-      if (!rs.ok){ if (rs.cancelled) return false; self.postMessage({ type:"ERROR", error:`HTTP ${rs.status}: ${rs.text}` }); return false; }
-      if ((seq % 50)===0) self.postMessage({ type:"PROGRESS", progress: Math.round((seq/total)*100) });
-      if ((seq % 500)===0) await sleep(1);
-    }
-    return true;
+    const step = Math.max(0, Math.floor((Number(delayMs)||0)/Math.max(1, Number(batchSize)||1)));
+    const base = Date.now();
+    return runIndexed(total, (i) => base + i*step);
   };
 
   try{

@@ -14,11 +14,27 @@ export function updateAttributeList(attributeList, selectedAttributes) {
   selectedAttributes.forEach((value, key) => {
     const item = document.createElement('div');
     item.className = 'flex items-center space-x-2 mb-2';
-    item.innerHTML = `
-      <input type="text" value="${key}" readonly class="bg-gray-100 rounded px-2 py-1 flex-1" />
-      <input type="text" value="${value}" oninput="window.updateAttributeValue('${key}', this.value)" class="rounded border px-2 py-1 flex-1" />
-      <button onclick="window.removeAttribute('${key}')" class="bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200">-</button>
-    `;
+
+    const keyInput = document.createElement('input');
+    keyInput.type = 'text';
+    keyInput.value = key;
+    keyInput.readOnly = true;
+    keyInput.className = 'bg-gray-100 rounded px-2 py-1 flex-1';
+
+    const valueInput = document.createElement('input');
+    valueInput.type = 'text';
+    valueInput.value = value;
+    valueInput.className = 'rounded border px-2 py-1 flex-1';
+    valueInput.addEventListener('input', () => window.updateAttributeValue(key, valueInput.value));
+
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = '-';
+    removeBtn.className = 'bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200';
+    removeBtn.addEventListener('click', () => window.removeAttribute(key));
+
+    item.appendChild(keyInput);
+    item.appendChild(valueInput);
+    item.appendChild(removeBtn);
     attributeList.appendChild(item);
   });
 }
