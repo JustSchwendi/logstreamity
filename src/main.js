@@ -264,6 +264,10 @@ randomizeBtn?.addEventListener('click', () => {
   randomizeEnabled = !randomizeEnabled;
   randomizeBtn.classList.toggle('bg-green-100', randomizeEnabled);
   updateLabels(randomizeEnabled);
+  if (randomizeEnabled) {
+    if (delayInput) { delayInput.value = '10000'; delayInput.dispatchEvent(new Event('input', { bubbles: true })); }
+    if (lineVolumeInput) { lineVolumeInput.value = '15'; lineVolumeInput.dispatchEvent(new Event('input', { bubbles: true })); }
+  }
   logStatus(randomizeEnabled ? '🎲 Randomization enabled' : '🎲 Randomization disabled');
 });
 
