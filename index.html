@@ -243,7 +243,7 @@
 </div>
 <div class="mode-desc hidden" id="historic-desc">
 <p class="text-gray-600 mb-4">
-                      This feature allows you to start ingesting at a certain start date and time. The API does not support log ingestion of logs older than 24hrs! If the ingestion duration is 5 minutes, the last log timestamp will be your selected time + 5 minutes.
+                      This feature allows you to start ingesting at a certain start date and time. The API does not support log ingestion of logs older than 72hrs! If the ingestion duration is 5 minutes, the last log timestamp will be your selected time + 5 minutes.
                     </p>
 <div class="flex items-center space-x-2">
 <label class="text-sm font-medium text-gray-700">Start Time:</label>
@@ -252,7 +252,7 @@
 </div>
 <div class="mode-desc hidden" id="scattered-desc">
 <p class="text-gray-600 mb-4">
-                      This feature allows fast ingestion, and spread of logs across a day, to simulate logs for multiple hours within few seconds. This feature aims to ingest demo log data to test certain demo cases. Please consider to define attribute injection so logs will be linked to entities in Dynatrace. The API does not support log ingestion of logs older than 24hrs! Please provide start time, end time and in how many chunks approx. you wish to scatter the logs. The randomize feature will automatically add some more delay between log lines.
+                      This feature allows fast ingestion, and spread of logs across up to 3 days, to simulate logs for multiple hours within few seconds. This feature aims to ingest demo log data to test certain demo cases. Please consider to define attribute injection so logs will be linked to entities in Dynatrace. The API does not support log ingestion of logs older than 72hrs! Please provide start time, end time and in how many chunks approx. you wish to scatter the logs. The randomize feature will automatically add some more delay between log lines.
                     </p>
 <div class="space-y-4">
 <div class="flex items-center space-x-2">
