@@ -32,6 +32,6 @@ POST /api/webhook
 
 ## Notes
 - Loop mode is not supported via webhook to prevent endless ingestion
-- Timestamps cannot be more than 24 hours in the past
+- Timestamps cannot be more than 72 hours in the past
 - Empty lines are automatically skipped
 - [[[SLEEP X]]] commands can be used to add delays (X in milliseconds)
